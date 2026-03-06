@@ -15,37 +15,41 @@ The database starts empty. We can get anonymized data on task completions in Aut
 <h4>Table of contents</h4>
 
 - [1. Steps](#1-steps)
-  - [1.1. Follow the usual `Git workflow`](#11-follow-the-usual-git-workflow)
-  - [1.2. Part A: Explore the API](#12-part-a-explore-the-api)
-    - [1.2.1. Fetch the item catalog](#121-fetch-the-item-catalog)
-    - [1.2.2. Fetch check logs](#122-fetch-check-logs)
-    - [1.2.3. Test incremental sync](#123-test-incremental-sync)
-  - [1.3. Part B: Build the pipeline](#13-part-b-build-the-pipeline)
-    - [1.3.1. Read the code stubs](#131-read-the-code-stubs)
-    - [1.3.2. Implement the pipeline](#132-implement-the-pipeline)
-    - [1.3.3. Run and test locally](#133-run-and-test-locally)
-    - [1.3.4. Verify the data locally](#134-verify-the-data-locally)
-    - [1.3.5. Test idempotency locally](#135-test-idempotency-locally)
-    - [1.3.6. Commit and push your work](#136-commit-and-push-your-work)
-    - [1.3.7. Update and test on the VM](#137-update-and-test-on-the-vm)
-  - [1.4. Finish the task](#14-finish-the-task)
-  - [1.5. Check the task using the autochecker](#15-check-the-task-using-the-autochecker)
+  - [1.1. Follow the `Git workflow`](#11-follow-the-git-workflow)
+  - [1.2. Create a `Lab Task` issue](#12-create-a-lab-task-issue)
+  - [1.3. Part A: Explore the API](#13-part-a-explore-the-api)
+    - [1.3.1. Fetch the item catalog](#131-fetch-the-item-catalog)
+    - [1.3.2. Fetch check logs](#132-fetch-check-logs)
+    - [1.3.3. Test incremental sync](#133-test-incremental-sync)
+  - [1.4. Part B: Build the pipeline](#14-part-b-build-the-pipeline)
+    - [1.4.1. Read the code stubs](#141-read-the-code-stubs)
+    - [1.4.2. Implement the pipeline](#142-implement-the-pipeline)
+    - [1.4.3. Run and test locally](#143-run-and-test-locally)
+    - [1.4.4. Verify the data locally](#144-verify-the-data-locally)
+    - [1.4.5. Test idempotency locally](#145-test-idempotency-locally)
+    - [1.4.6. Commit and push your work](#146-commit-and-push-your-work)
+    - [1.4.7. Update and test on the VM](#147-update-and-test-on-the-vm)
+  - [1.5. Finish the task](#15-finish-the-task)
+  - [1.6. Check the task using the autochecker](#16-check-the-task-using-the-autochecker)
 - [2. Acceptance criteria](#2-acceptance-criteria)
 
 ## 1. Steps
 
-### 1.1. Start with the usual [`Git workflow`](../../../wiki/git-workflow.md)
+### 1.1. Follow the [`Git workflow`](../../../wiki/git-workflow.md)
 
-1. Create a github issue titled:
+Follow the [`Git workflow`](../../../wiki/git-workflow.md) to complete this task.
+
+### 1.2. Create a `Lab Task` issue
+
+1. Create a `GitHub` issue titled:
+
    ```
    [Task] Build the Data Pipeline
    ```
 
-   Fill the template properly.
+2. To create a branch for the task,
 
-2. Then create a branch for the task.
-
-   run in the `VS Code Terminal`:
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
    git checkout main
@@ -58,17 +62,22 @@ The database starts empty. We can get anonymized data on task completions in Aut
    - The short title (`build-data-pipeline`) makes branch purpose clear in PR lists and `Git` history.
    - The pattern reduces naming collisions across the team.
 
-### 1.2. Part A: Explore the API
+### 1.3. Part A: Explore the API
+
+<!-- no toc -->
+- [1.3.1. Fetch the item catalog](#131-fetch-the-item-catalog)
+- [1.3.2. Fetch check logs](#132-fetch-check-logs)
+- [1.3.3. Test incremental sync](#133-test-incremental-sync)
 
 Before writing code, let's explore the autochecker API.
 
 The API has HTTP Basic Auth, we'll use `curl` to send requests.
 
-#### 1.2.1. Fetch the item catalog
+#### 1.3.1. Fetch the item catalog
 
 1. To fetch the lab/task catalog,
 
-   run in the `VS Code Terminal`:
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
    curl \
@@ -78,7 +87,7 @@ The API has HTTP Basic Auth, we'll use `curl` to send requests.
 
    Replace `<your-email>` and `<github-username><telegram-alias>` with the credentials you entered in autochecker bot.
 
-   You should see a JSON array of labs and tasks from this course:
+   You should see a `JSON` array of labs and tasks from this course:
 
    ```json
    [
@@ -91,11 +100,11 @@ The API has HTTP Basic Auth, we'll use `curl` to send requests.
 > [!NOTE]
 > If your terminal shows JSON in one long line, you can format the output using an [online JSON viewer](https://jsonformatter.org/).
 
-#### 1.2.2. Fetch check logs
+#### 1.3.2. Fetch check logs
 
 1. To fetch the first 5 check logs,
 
-   run in the `VS Code Terminal`:
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
    curl \
@@ -103,7 +112,7 @@ The API has HTTP Basic Auth, we'll use `curl` to send requests.
      "https://auche.namaz.live/api/logs?limit=5"
    ```
 
-   You should see a JSON object with a `logs` array:
+   You should see a `JSON` object with a `logs` array:
 
    ```json
    {
@@ -127,17 +136,18 @@ The API has HTTP Basic Auth, we'll use `curl` to send requests.
    }
    ```
 
-   > [!NOTE]
-   > - `student_id` is an anonymized identifier (not a real student ID).
-   > - `has_more: true` means there are more records — you need to paginate.
-   > - `score` is a percentage (0.0–100.0).
-   > - `passed`, `failed`, and `total` are the number of individual checks.
+> [!NOTE]
+>
+> - `student_id` is an anonymized identifier (not a real student ID).
+> - `has_more: true` means there are more records — you need to paginate.
+> - `score` is a percentage (0.0–100.0).
+> - `passed`, `failed`, and `total` are the number of individual checks.
 
-#### 1.2.3. Test incremental sync
+#### 1.3.3. Test incremental sync
 
 1. To fetch only recent logs,
 
-   run in the `VS Code Terminal`:
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
    curl \
@@ -147,22 +157,22 @@ The API has HTTP Basic Auth, we'll use `curl` to send requests.
 
    You should see only logs submitted after March 1st 2026.
 
-   > [!NOTE]
-   > The `since` parameter enables incremental sync — you can fetch new data each time.
-   > Your pipeline will use the most recent `submitted_at` from the database as the `since` value.
+> [!NOTE]
+> The `since` parameter enables incremental sync — you can fetch new data each time.
+> Your pipeline will use the most recent `submitted_at` from the database as the `since` value.
 
-### 1.3. Part B: Build the pipeline
+### 1.4. Part B: Build the pipeline
 
 <!-- no toc -->
-- [1.3.1. Read the code stubs](#131-read-the-code-stubs)
-- [1.3.2. Implement the pipeline](#132-implement-the-pipeline)
-- [1.3.3. Run and test locally](#133-run-and-test-locally)
-- [1.3.4. Verify the data locally](#134-verify-the-data-locally)
-- [1.3.5. Test idempotency locally](#135-test-idempotency-locally)
-- [1.3.6. Commit and push your work](#136-commit-and-push-your-work)
-- [1.3.7. Update and test on the VM](#137-update-and-test-on-the-vm)
+- [1.4.1. Read the code stubs](#141-read-the-code-stubs)
+- [1.4.2. Implement the pipeline](#142-implement-the-pipeline)
+- [1.4.3. Run and test locally](#143-run-and-test-locally)
+- [1.4.4. Verify the data locally](#144-verify-the-data-locally)
+- [1.4.5. Test idempotency locally](#145-test-idempotency-locally)
+- [1.4.6. Commit and push your work](#146-commit-and-push-your-work)
+- [1.4.7. Update and test on the VM](#147-update-and-test-on-the-vm)
 
-#### 1.3.1. Read the code stubs
+#### 1.4.1. Read the code stubs
 
 The code stubs in `backend/app/etl.py` contain detailed TODOs.
 
@@ -171,13 +181,13 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 
    This file contains five functions with detailed TODO comments:
 
-   | Function | Role |
-   |----------|------|
-   | `fetch_items()` | Fetch the lab/task catalog from the API |
-   | `fetch_logs()` | Fetch check logs with pagination |
-   | `load_items()` | Insert items into the database |
-   | `load_logs()` | Insert logs (with learner creation) into the database |
-   | `sync()` | Orchestrate the full pipeline |
+   | Function        | Role                                                  |
+   | --------------- | ----------------------------------------------------- |
+   | `fetch_items()` | Fetch the lab/task catalog from the API               |
+   | `fetch_logs()`  | Fetch check logs with pagination                      |
+   | `load_items()`  | Insert items into the database                        |
+   | `load_logs()`   | Insert logs (with learner creation) into the database |
+   | `sync()`        | Orchestrate the full pipeline                         |
 
 2. Open the file:
    [`backend/app/routers/pipeline.py`](../../../backend/app/routers/pipeline.py).
@@ -191,7 +201,7 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
    - How to match API data to database models.
    - How to ensure idempotent upserts (skip records that already exist).
 
-#### 1.3.2. Implement the pipeline
+#### 1.4.2. Implement the pipeline
 
 1. Start the `Qwen code` coding agent in the terminal inside the project directory.
 2. Give it a prompt that asks for planning, implementation, and explanation:
@@ -212,28 +222,31 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 
 > [!TIP]
 > To get educational answers from a coding agent, ask for these explicitly:
+>
 > - "Plan first, then code."
 > - "Explain each function step by step."
 > - "Call out assumptions and edge cases."
 > - "After coding, summarize why this implementation is correct."
 
-#### 1.3.3. Run and test locally
+#### 1.4.3. Run and test locally
 
-1. Deploy your changes locally:
+1. To deploy your changes locally,
+
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
    docker compose --env-file .env.docker.secret up --build -d
    ```
 
-2. Open `Swagger UI` at http://localhost:42002/docs.
+2. Open [`Swagger UI`](../../../wiki/swagger.md#open-swagger-ui) at `http://localhost:<caddy-port>/docs`.
 
-   `42002` is the default `CADDY_PORT` from `.env.docker.secret`. If you changed it, use your value instead.
+   Replace `<caddy-port>` with the value of [`CADDY_HOST_PORT`](../../../wiki/dotenv-docker-secret.md#caddy_host_port) in [`.env.docker.secret`](../../../wiki/dotenv-docker-secret.md#what-is-envdockersecret) (default: `42002`).
 
-3. Authorize with your `API_KEY`.
+3. Authorize with your [`API_KEY`](../../../wiki/dotenv-docker-secret.md#api_key).
 
 4. Trigger the pipeline: expand `POST /pipeline/sync`, click `Try it out`, then `Execute`.
 
-   You should see a `200` response with a JSON body:
+   You should see a `200` response with a `JSON` body:
 
    ```json
    {
@@ -252,7 +265,9 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 
    <h4>500 Internal Server Error</h4>
 
-   Check the container logs for the error:
+   To check the container logs for the error,
+
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
    docker compose --env-file .env.docker.secret logs app --tail 50
@@ -266,9 +281,9 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 
    </details>
 
-#### 1.3.4. Verify the data locally
+#### 1.4.4. Verify the data locally
 
-1. In local `Swagger UI`, try `GET /items/`.
+1. In local [`Swagger UI`](../../../wiki/swagger.md#open-swagger-ui), try `GET /items/`.
 
    You should see a list of lab and task items created by the pipeline.
 
@@ -282,9 +297,9 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 
 4. (Optional) Open [`pgAdmin`](../../../wiki/pgadmin.md#what-is-pgadmin) and inspect the tables directly.
 
-#### 1.3.5. Test idempotency locally
+#### 1.4.5. Test idempotency locally
 
-1. In local `Swagger UI`, run `POST /pipeline/sync` again.
+1. In local [`Swagger UI`](../../../wiki/swagger.md#open-swagger-ui), run `POST /pipeline/sync` again.
 
    You should see:
 
@@ -301,7 +316,7 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 > Idempotent upserts are important for production pipelines.
 > If the pipeline is interrupted, you can safely re-run it without creating duplicates.
 
-#### 1.3.6. Commit and push your work
+#### 1.4.6. Commit and push your work
 
 1. [Commit](../../../wiki/git-workflow.md#commit) your changes.
 
@@ -311,7 +326,9 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
    feat: implement ETL pipeline for autochecker data
    ```
 
-2. Push your task branch:
+2. To push your task branch,
+
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
    git push -u origin <task-branch>
@@ -319,9 +336,11 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 
    Replace [`<task-branch>`](../../../wiki/git-workflow.md#task-branch).
 
-#### 1.3.7. Update and test on the VM
+#### 1.4.7. Update and test on the VM
 
-1. On your VM, pull your branch and restart the services:
+1. To pull your branch and restart the services on your VM,
+
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
    cd se-toolkit-lab-5
@@ -331,15 +350,20 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
    docker compose --env-file .env.docker.secret up --build -d
    ```
 
-2. Open `Swagger UI` at `http://<your-vm-ip-address>:42002/docs`.
+2. Open [`Swagger UI`](../../../wiki/swagger.md#open-swagger-ui) at `http://<your-vm-ip-address>:<caddy-port>/docs`.
 
-   Replace `<your-vm-ip-address>` with your VM's IP address. If you changed `CADDY_PORT`, use your value instead of `42002`.
+   Replace:
 
-3. Authorize with your `API_KEY`, then run `POST /pipeline/sync` once.
+   - `<your-vm-ip-address>` with your VM's IP address.
+   - `<caddy-port>` with the value of [`CADDY_HOST_PORT`](../../../wiki/dotenv-docker-secret.md#caddy_host_port) (default: `42002`).
+
+3. Authorize with your [`API_KEY`](../../../wiki/dotenv-docker-secret.md#api_key).
+
+4. Run `POST /pipeline/sync` once.
 
    You should get `200` with `new_records` and `total_records`.
 
-### 1.4. Finish the task
+### 1.5. Finish the task
 
 1. Go to your fork on `GitHub` and click `Pull requests` → `New pull request`.
 
@@ -355,7 +379,7 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 
 7. Merge the PR and close the issue.
 
-### 1.5. Check the task using the autochecker
+### 1.6. Check the task using the autochecker
 
 [Check the task using the autochecker `Telegram` bot](../../../wiki/autochecker.md#check-the-task-using-the-autochecker-bot).
 
@@ -364,7 +388,7 @@ The code stubs in `backend/app/etl.py` contain detailed TODOs.
 ## 2. Acceptance criteria
 
 - [ ] Issue has the correct title.
-- [ ] `POST /pipeline/sync` returns `200` with a JSON body containing `new_records` and `total_records`.
+- [ ] `POST /pipeline/sync` returns `200` with a `JSON` body containing `new_records` and `total_records`.
 - [ ] `GET /items/` returns items created by the pipeline (labs and tasks).
 - [ ] `GET /learners/` returns learners created by the pipeline.
 - [ ] `GET /interactions/` returns interactions with scores.
