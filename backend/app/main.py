@@ -1,5 +1,5 @@
 """Learning Management Service — FastAPI application."""
-
+from app.routers import pipeline
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -27,6 +27,8 @@ app.include_router(
     tags=["items"],
     dependencies=[Depends(verify_api_key)],
 )
+
+app.include_router(pipeline.router)
 
 if settings.enable_interactions:
     app.include_router(
