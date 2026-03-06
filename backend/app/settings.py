@@ -3,11 +3,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Environment variables
+    AUTOCHECKER_API_URL: str = "https://autochecker.pg.innopolis.university/api"
+    AUTOCHECKER_EMAIL: str = "student@example.com"
+    AUTOCHECKER_PASSWORD: str = "your_password"
 
     app_name: str = Field(default="Learning Management Service", alias="NAME")
     debug: bool = Field(default=False, alias="DEBUG")
-    address: str = Field(default="127.0.0.1", alias="ADDRESS")
+    address: str = Field(default="0.0.0.0", alias="ADDRESS")
     port: int = Field(default=8000, alias="PORT")
     reload: bool = Field(default=False, alias="RELOAD")
 
@@ -31,11 +33,9 @@ class Settings(BaseSettings):
     db_password: str = Field(default="postgres", alias="DB_PASSWORD")
 
     model_config = SettingsConfigDict(
-        env_file=".env.secret",
-        env_file_encoding="utf-8",
         case_sensitive=True,
         extra="allow",
     )
 
 
-settings = Settings.model_validate({})
+settings = Settings()
