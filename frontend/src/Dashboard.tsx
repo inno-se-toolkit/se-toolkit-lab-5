@@ -9,6 +9,8 @@ import {
   Title,
   Tooltip,
   Legend,
+  ChartData,
+  ChartOptions,
 } from 'chart.js'
 import { Bar, Line } from 'react-chartjs-2'
 import './App.css'
@@ -154,10 +156,9 @@ function labsReducer(_state: LabsData, action: LabsAction): LabsData {
 
 interface DashboardProps {
   token: string
-  onDisconnect: () => void
 }
 
-export default function Dashboard({ token, onDisconnect }: DashboardProps) {
+export default function Dashboard({ token }: DashboardProps) {
   const [selectedLab, setSelectedLab] = useState<string>('')
   const [scoresState, scoresDispatch] = useReducer(scoresReducer, {
     status: 'idle',
@@ -260,7 +261,7 @@ export default function Dashboard({ token, onDisconnect }: DashboardProps) {
   }, [selectedLab, token])
 
   // Prepare chart data for scores
-  const scoresChartData = {
+  const scoresChartData: ChartData<'bar'> = {
     labels: scoresState.data.map((b) => b.bucket),
     datasets: [
       {
@@ -274,7 +275,7 @@ export default function Dashboard({ token, onDisconnect }: DashboardProps) {
   }
 
   // Prepare chart data for timeline
-  const timelineChartData = {
+  const timelineChartData: ChartData<'line'> = {
     labels: timelineState.data.map((t) => t.date),
     datasets: [
       {
@@ -288,7 +289,7 @@ export default function Dashboard({ token, onDisconnect }: DashboardProps) {
     ],
   }
 
-  const chartOptions = {
+  const chartOptions: ChartOptions<'bar'> = {
     responsive: true,
     plugins: {
       legend: {
@@ -299,12 +300,7 @@ export default function Dashboard({ token, onDisconnect }: DashboardProps) {
 
   return (
     <div>
-      <header className="app-header">
-        <h1>Dashboard</h1>
-        <button className="btn-disconnect" onClick={onDisconnect}>
-          Disconnect
-        </button>
-      </header>
+      <h1>Dashboard</h1>
 
       <div className="lab-selector">
         <label htmlFor="lab-select">Select Lab: </label>

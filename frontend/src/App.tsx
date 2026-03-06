@@ -11,6 +11,8 @@ interface Item {
   created_at: string
 }
 
+type Page = 'items' | 'dashboard'
+
 type FetchState =
   | { status: 'idle' }
   | { status: 'loading' }
@@ -38,6 +40,7 @@ function App() {
     () => localStorage.getItem(STORAGE_KEY) ?? '',
   )
   const [draft, setDraft] = useState('')
+  const [currentPage, setCurrentPage] = useState<Page>('items')
   const [fetchState, dispatch] = useReducer(fetchReducer, { status: 'idle' })
 
   useEffect(() => {
@@ -88,7 +91,65 @@ function App() {
     )
   }
 
-  return <Dashboard token={token} onDisconnect={handleDisconnect} />
+  return (
+    <div>
+      <header className="app-header">
+        <nav className="app-nav">
+          <button
+            className={currentPage === 'items' ? 'active' : ''}
+            onClick={() => setCurrentPage('items')}
+          >
+            Items
+          </button>
+          <button
+            className={currentPage === 'dashboard' ? 'active' : ''}
+            onClick={() => setCurrentPage('dashboard')}
+          >
+            Dashboard
+          </button>
+        </nav>
+        <button className="btn-disconnect" onClick={handleDisconnect}>
+          Disconnect
+        </button>
+      </header>
+
+      {currentPage === 'items' && (
+        <>
+          {fetchState.status === 'loading' && <p>Loading...</p>}
+          {fetchState.status === 'error' && (
+            <p>Error: {fetchState.message}</p>
+          )}
+
+          {fetchState.status === 'success' && (
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>ItemType</th>
+                  <th>Title</th>
+                  <th>Created at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fetchState.items.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.id}</td>
+                    <td>{item.type}</td>
+                    <td>{item.title}</td>
+                    <td>{item.created_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+
+      {currentPage === 'dashboard' && (
+        <Dashboard token={token} />
+      )}
+    </div>
+  )
 }
 
 export default App
