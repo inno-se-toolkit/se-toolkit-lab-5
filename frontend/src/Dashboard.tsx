@@ -6,11 +6,16 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 export const Dashboard: React.FC = () => {
   const data = {
-    labels: ['Completed', 'Pending'],
-    datasets: [{ label: 'Tasks', data: [75, 25] }]
+    labels: ['January', 'February', 'March'],
+    datasets: [{ 
+      label: 'Performance', 
+      data: [65, 59, 80], 
+      backgroundColor: 'rgba(75, 192, 192, 0.5)' 
+    }]
   };
+
   return (
-    <div>
+    <div style={{ padding: '20px' }}>
       <h2>Analytics Dashboard</h2>
       <Bar data={data} />
     </div>
