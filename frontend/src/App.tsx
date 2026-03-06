@@ -1,5 +1,6 @@
 import { useState, useEffect, useReducer, FormEvent } from 'react'
 import './App.css'
+import Dashboard from './Dashboard'
 
 const STORAGE_KEY = 'api_key'
 
@@ -10,23 +11,31 @@ interface Item {
   created_at: string
 }
 
-type FetchState =
+interface Lab {
+  id: string
+  name: string
+}
+
+type FetchState<T> =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; items: Item[] }
+  | { status: 'success'; data: T }
   | { status: 'error'; message: string }
 
 type FetchAction =
   | { type: 'fetch_start' }
-  | { type: 'fetch_success'; data: Item[] }
+  | { type: 'fetch_success'; data: unknown }
   | { type: 'fetch_error'; message: string }
 
-function fetchReducer(_state: FetchState, action: FetchAction): FetchState {
+function fetchReducer<T>(
+  _state: FetchState<T>,
+  action: FetchAction,
+): FetchState<T> {
   switch (action.type) {
     case 'fetch_start':
       return { status: 'loading' }
     case 'fetch_success':
-      return { status: 'success', items: action.data }
+      return { status: 'success', data: action.data as T }
     case 'fetch_error':
       return { status: 'error', message: action.message }
   }
@@ -37,24 +46,42 @@ function App() {
     () => localStorage.getItem(STORAGE_KEY) ?? '',
   )
   const [draft, setDraft] = useState('')
-  const [fetchState, dispatch] = useReducer(fetchReducer, { status: 'idle' })
+  const [fetchState, dispatch] = useReducer(fetchReducer<Item[]>, {
+    status: 'idle',
+  })
+  const [labsState, setLabsState] = useState<FetchState<Lab[]>>({
+    status: 'idle',
+  })
 
   useEffect(() => {
     if (!token) return
 
     dispatch({ type: 'fetch_start' })
+    setLabsState({ status: 'loading' })
 
-    fetch('/items/', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
+    Promise.all([
+      fetch('/items/', {
+        headers: { Authorization: `Bearer ${token}` },
       })
-      .then((data: Item[]) => dispatch({ type: 'fetch_success', data }))
-      .catch((err: Error) =>
-        dispatch({ type: 'fetch_error', message: err.message }),
-      )
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
+        .then((data: Item[]) => dispatch({ type: 'fetch_success', data })),
+      fetch('/labs/', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
+        .then((data: Lab[]) => setLabsState({ status: 'success', data }))
+        .catch((err: Error) =>
+          setLabsState({ status: 'error', message: err.message }),
+        ),
+    ]).catch((err: Error) =>
+      dispatch({ type: 'fetch_error', message: err.message }),
+    )
   }, [token])
 
   function handleConnect(e: FormEvent) {
@@ -90,7 +117,7 @@ function App() {
   return (
     <div>
       <header className="app-header">
-        <h1>Items</h1>
+        <h1>LMS Dashboard</h1>
         <button className="btn-disconnect" onClick={handleDisconnect}>
           Disconnect
         </button>
@@ -98,6 +125,13 @@ function App() {
 
       {fetchState.status === 'loading' && <p>Loading...</p>}
       {fetchState.status === 'error' && <p>Error: {fetchState.message}</p>}
+      {labsState.status === 'error' && <p>Error: {labsState.message}</p>}
+
+      {labsState.status === 'success' && labsState.data.length > 0 ? (
+        <Dashboard labs={labsState.data} />
+      ) : labsState.status === 'success' ? (
+        <p>No labs available</p>
+      ) : null}
 
       {fetchState.status === 'success' && (
         <table>
@@ -110,7 +144,7 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {fetchState.items.map((item) => (
+            {fetchState.data.map((item) => (
               <tr key={item.id}>
                 <td>{item.id}</td>
                 <td>{item.type}</td>
