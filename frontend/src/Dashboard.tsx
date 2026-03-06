@@ -298,6 +298,15 @@ export default function Dashboard({ token }: DashboardProps) {
     },
   }
 
+  const lineChartOptions: ChartOptions<'line'> = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+    },
+  }
+
   return (
     <div>
       <h1>Dashboard</h1>
@@ -354,7 +363,7 @@ export default function Dashboard({ token }: DashboardProps) {
             )}
             {timelineState.status === 'success' &&
               timelineState.data.length > 0 && (
-                <Line data={timelineChartData} options={chartOptions} />
+                <Line data={timelineChartData} options={lineChartOptions} />
               )}
             {timelineState.status === 'success' &&
               timelineState.data.length === 0 && (
