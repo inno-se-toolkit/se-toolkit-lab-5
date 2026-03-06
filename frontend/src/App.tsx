@@ -1,8 +1,9 @@
 import { useState, useEffect, useReducer, FormEvent } from 'react'
 import './App.css'
-
+import { useState } from 'react';
+import { Dashboard } from './Dashboard';
 const STORAGE_KEY = 'api_key'
-
+const [currentView, setCurrentView] = useState<'items' | 'dashboard'>('items');
 interface Item {
   id: number
   type: string
@@ -126,3 +127,18 @@ function App() {
 }
 
 export default App
+return (
+  <div>
+    <nav>
+      <button onClick={() => setCurrentView('items')}>Items</button>
+      <button onClick={() => setCurrentView('dashboard')}>Dashboard</button>
+    </nav>
+
+    {currentView === 'dashboard' ? (
+      <Dashboard />
+    ) : (
+      /* YOUR EXISTING ITEMS CODE/COMPONENT GOES HERE */
+      <div>Existing Items View</div>
+    )}
+  </div>
+);
