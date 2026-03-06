@@ -59,3 +59,46 @@ tr:nth-child(even) {
   padding: 0.25rem 0.75rem;
   font-size: 0.85rem;
 }
+
+/* Lab selector */
+
+.lab-selector {
+  margin-bottom: 1.5rem;
+}
+
+.lab-selector label {
+  font-weight: bold;
+  margin-right: 0.5rem;
+}
+
+.lab-selector select {
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  min-width: 200px;
+}
+
+/* Dashboard sections */
+
+.dashboard-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-section h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.dashboard-section table {
+  margin-top: 1rem;
+}
+
+.dashboard-section canvas {
+  max-height: 300px;
+}
