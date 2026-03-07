@@ -3,12 +3,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, func
 from app.database import get_session
+from app.models import Item, InteractionLog, Learner
 from typing import List, Dict, Any
 from datetime import date
+
 router = APIRouter(tags=["analytics"])
 
+
 async def get_lab_tasks(lab: str, session: AsyncSession) -> List[Item]:
-    """Find lab item and its child tasks."""
     lab_title = f"Lab {lab.split('-')[1]}"
     stmt = select(Item).where(Item.title.contains(lab_title), Item.type == "lab")
     result = await session.execute(stmt)
@@ -111,5 +113,3 @@ async def get_groups(
     result = await session.execute(stmt)
     return [{"group": row.group, "avg_score": round(row.avg_score, 1) if row.avg_score else 0.0,
              "students": row.students} for row in result]
-# Alias for backward compatibility
-Learner = LearnerRecord

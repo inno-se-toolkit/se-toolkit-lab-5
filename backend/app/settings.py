@@ -4,7 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Environment variables
-
+    AUTOCHEKER_EMAIL: str = ""
+    AUTOCHEKER_PASSWORD: str = ""
     app_name: str = Field(default="Learning Management Service", alias="NAME")
     debug: bool = Field(default=False, alias="DEBUG")
     address: str = Field(default="127.0.0.1", alias="ADDRESS")
