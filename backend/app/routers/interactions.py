@@ -26,7 +26,17 @@ async def get_interactions(
 ):
     """Get all interactions, optionally filtered by item."""
     interactions = await read_interactions(session)
-    return _filter_by_item_id(interactions, item_id)
+    filtered = _filter_by_item_id(interactions, item_id)
+    return [
+        InteractionModel(
+            id=i.id,
+            learner_id=i.learner_id,
+            item_id=i.item_id,
+            kind=i.kind,
+            timestamp=i.created_at,
+        )
+        for i in filtered
+    ]
 
 
 @router.post("/", response_model=InteractionLog, status_code=201)
