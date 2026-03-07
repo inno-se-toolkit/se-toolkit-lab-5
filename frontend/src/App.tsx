@@ -1,128 +1,63 @@
-import { useState, useEffect, useReducer, FormEvent } from 'react'
-import './App.css'
-
-const STORAGE_KEY = 'api_key'
-
-interface Item {
-  id: number
-  type: string
-  title: string
-  created_at: string
-}
-
-type FetchState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'success'; items: Item[] }
-  | { status: 'error'; message: string }
-
-type FetchAction =
-  | { type: 'fetch_start' }
-  | { type: 'fetch_success'; data: Item[] }
-  | { type: 'fetch_error'; message: string }
-
-function fetchReducer(_state: FetchState, action: FetchAction): FetchState {
-  switch (action.type) {
-    case 'fetch_start':
-      return { status: 'loading' }
-    case 'fetch_success':
-      return { status: 'success', items: action.data }
-    case 'fetch_error':
-      return { status: 'error', message: action.message }
-  }
-}
+import React, { useState } from 'react';
+import Items from './Items';      // Существующий компонент со списком элементов
+import Dashboard from './Dashboard'; // Наш новый компонент
 
 function App() {
-  const [token, setToken] = useState(
-    () => localStorage.getItem(STORAGE_KEY) ?? '',
-  )
-  const [draft, setDraft] = useState('')
-  const [fetchState, dispatch] = useReducer(fetchReducer, { status: 'idle' })
+  // Состояние для отслеживания текущей страницы
+  // Может быть либо 'items', либо 'dashboard'
+  const [currentPage, setCurrentPage] = useState<'items' | 'dashboard'>('items');
 
-  useEffect(() => {
-    if (!token) return
+  // Стили для кнопок навигации
+  const buttonStyle = {
+    padding: '10px 20px',
+    marginRight: '10px',
+    border: 'none',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    fontSize: '16px',
+  };
 
-    dispatch({ type: 'fetch_start' })
+  const activeButtonStyle = {
+    ...buttonStyle,
+    backgroundColor: '#007bff',
+    color: 'white',
+    fontWeight: 'bold' as const,
+  };
 
-    fetch('/items/', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then((data: Item[]) => dispatch({ type: 'fetch_success', data }))
-      .catch((err: Error) =>
-        dispatch({ type: 'fetch_error', message: err.message }),
-      )
-  }, [token])
-
-  function handleConnect(e: FormEvent) {
-    e.preventDefault()
-    const trimmed = draft.trim()
-    if (!trimmed) return
-    localStorage.setItem(STORAGE_KEY, trimmed)
-    setToken(trimmed)
-  }
-
-  function handleDisconnect() {
-    localStorage.removeItem(STORAGE_KEY)
-    setToken('')
-    setDraft('')
-  }
-
-  if (!token) {
-    return (
-      <form className="token-form" onSubmit={handleConnect}>
-        <h1>API Key</h1>
-        <p>Enter your API key to connect.</p>
-        <input
-          type="password"
-          placeholder="Token"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        <button type="submit">Connect</button>
-      </form>
-    )
-  }
+  const inactiveButtonStyle = {
+    ...buttonStyle,
+    backgroundColor: '#f0f0f0',
+    color: '#333',
+  };
 
   return (
     <div>
-      <header className="app-header">
-        <h1>Items</h1>
-        <button className="btn-disconnect" onClick={handleDisconnect}>
-          Disconnect
+      {/* Панель навигации */}
+      <nav style={{ 
+        padding: '15px 20px', 
+        borderBottom: '2px solid #007bff',
+        backgroundColor: '#f8f9fa',
+        marginBottom: '20px'
+      }}>
+        <button
+          onClick={() => setCurrentPage('items')}
+          style={currentPage === 'items' ? activeButtonStyle : inactiveButtonStyle}
+        >
+          📋 Items
         </button>
-      </header>
+        <button
+          onClick={() => setCurrentPage('dashboard')}
+          style={currentPage === 'dashboard' ? activeButtonStyle : inactiveButtonStyle}
+        >
+          📊 Dashboard
+        </button>
+      </nav>
 
-      {fetchState.status === 'loading' && <p>Loading...</p>}
-      {fetchState.status === 'error' && <p>Error: {fetchState.message}</p>}
-
-      {fetchState.status === 'success' && (
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>ItemType</th>
-              <th>Title</th>
-              <th>Created at</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fetchState.items.map((item) => (
-              <tr key={item.id}>
-                <td>{item.id}</td>
-                <td>{item.type}</td>
-                <td>{item.title}</td>
-                <td>{item.created_at}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      {/* Условный рендеринг страниц */}
+      {currentPage === 'items' && <Items />}
+      {currentPage === 'dashboard' && <Dashboard />}
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
