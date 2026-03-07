@@ -9,8 +9,13 @@ Both require HTTP Basic Auth (email + password from settings).
 
 from datetime import datetime
 
+import httpx
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.models.interaction import InteractionLog
+from app.models.item import ItemRecord
+from app.models.learner import Learner
 from app.settings import settings
 
 
@@ -31,7 +36,13 @@ async def fetch_items() -> list[dict]:
     - Return the parsed list of dicts
     - Raise an exception if the response status is not 200
     """
-    raise NotImplementedError
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{settings.autochecker_api_url}/api/items",
+            auth=(settings.autochecker_email, settings.autochecker_password),
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 async def fetch_logs(since: datetime | None = None) -> list[dict]:
@@ -50,7 +61,34 @@ async def fetch_logs(since: datetime | None = None) -> list[dict]:
       - Use the submitted_at of the last log as the new "since" value
     - Return the combined list of all log dicts from all pages
     """
-    raise NotImplementedError
+    all_logs: list[dict] = []
+    current_since = since
+    
+    async with httpx.AsyncClient() as client:
+        while True:
+            params = {"limit": 500}
+            if current_since:
+                params["since"] = current_since.isoformat() + "Z"
+            
+            response = await client.get(
+                f"{settings.autochecker_api_url}/api/logs",
+                auth=(settings.autochecker_email, settings.autochecker_password),
+                params=params,
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            logs = data.get("logs", [])
+            all_logs.extend(logs)
+            
+            if not data.get("has_more", False):
+                break
+            
+            if logs:
+                last_submitted = logs[-1]["submitted_at"]
+                current_since = datetime.fromisoformat(last_submitted.replace("Z", ""))
+    
+    return all_logs
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +117,57 @@ async def load_items(items: list[dict], session: AsyncSession) -> int:
     - Commit after all inserts
     - Return the number of newly created items
     """
-    raise NotImplementedError
+    new_count = 0
+    lab_map: dict[str, ItemRecord] = {}
+    
+    labs = [item for item in items if item["type"] == "lab"]
+    for lab_data in labs:
+        result = await session.exec(
+            select(ItemRecord).where(
+                ItemRecord.type == "lab",
+                ItemRecord.title == lab_data["title"]
+            )
+        )
+        existing_lab = result.first()
+        
+        if not existing_lab:
+            new_lab = ItemRecord(
+                type="lab",
+                title=lab_data["title"]
+            )
+            session.add(new_lab)
+            await session.flush()
+            lab_map[lab_data["lab"]] = new_lab
+            new_count += 1
+        else:
+            lab_map[lab_data["lab"]] = existing_lab
+    
+    tasks = [item for item in items if item["type"] == "task"]
+    for task_data in tasks:
+        parent_lab = lab_map.get(task_data["lab"])
+        if not parent_lab:
+            continue
+        
+        result = await session.exec(
+            select(ItemRecord).where(
+                ItemRecord.type == "task",
+                ItemRecord.title == task_data["title"],
+                ItemRecord.parent_id == parent_lab.id
+            )
+        )
+        existing_task = result.first()
+        
+        if not existing_task:
+            new_task = ItemRecord(
+                type="task",
+                title=task_data["title"],
+                parent_id=parent_lab.id
+            )
+            session.add(new_task)
+            new_count += 1
+    
+    await session.commit()
+    return new_count
 
 
 async def load_logs(
@@ -121,7 +209,65 @@ async def load_logs(
     - Commit after all inserts
     - Return the number of newly created interactions
     """
-    raise NotImplementedError
+    new_count = 0
+    
+    title_lookup: dict[tuple[str, str | None], str] = {}
+    for item in items_catalog:
+        if item["type"] == "lab":
+            title_lookup[(item["lab"], None)] = item["title"]
+        elif item["type"] == "task":
+            title_lookup[(item["lab"], item["task"])] = item["title"]
+    
+    for log in logs:
+        result = await session.exec(
+            select(Learner).where(Learner.external_id == log["student_id"])
+        )
+        learner = result.first()
+        
+        if not learner:
+            learner = Learner(
+                external_id=log["student_id"],
+                student_group=log["group"]
+            )
+            session.add(learner)
+            await session.flush()
+        
+        task_key = log.get("task")
+        item_title = title_lookup.get((log["lab"], task_key))
+        if not item_title:
+            continue
+        
+        result = await session.exec(
+            select(ItemRecord).where(ItemRecord.title == item_title)
+        )
+        item = result.first()
+        if not item:
+            continue
+        
+        result = await session.exec(
+            select(InteractionLog).where(InteractionLog.external_id == log["id"])
+        )
+        existing_log = result.first()
+        if existing_log:
+            continue
+        
+        submitted_at = datetime.fromisoformat(log["submitted_at"].replace("Z", ""))
+        
+        interaction = InteractionLog(
+            external_id=log["id"],
+            learner_id=learner.id,
+            item_id=item.id,
+            kind="attempt",
+            score=log["score"],
+            checks_passed=log["passed"],
+            checks_total=log["total"],
+            created_at=submitted_at
+        )
+        session.add(interaction)
+        new_count += 1
+    
+    await session.commit()
+    return new_count
 
 
 # ---------------------------------------------------------------------------
@@ -144,4 +290,20 @@ async def sync(session: AsyncSession) -> dict:
     - Return a dict: {"new_records": <number of new interactions>,
                       "total_records": <total interactions in DB>}
     """
-    raise NotImplementedError
+    items = await fetch_items()
+    await load_items(items, session)
+    
+    result = await session.exec(
+        select(InteractionLog.created_at)
+        .order_by(InteractionLog.created_at.desc())
+        .limit(1)
+    )
+    last_sync = result.first()
+    
+    logs = await fetch_logs(since=last_sync)
+    new_records = await load_logs(logs, items, session)
+    
+    result = await session.exec(select(InteractionLog))
+    total_records = len(result.all())
+    
+    return {"new_records": new_records, "total_records": total_records}
