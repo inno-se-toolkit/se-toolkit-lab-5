@@ -13,7 +13,7 @@ function loadSecretEnv(): Record<string, string> {
 
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ""), ...loadSecretEnv() };
-  const target = env.VITE_API_TARGET;
+  const target = env.VITE_API_TARGET || "http://127.0.0.1:42002";
 
   return {
     plugins: [react()],
@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
         "/interactions": { target, changeOrigin: true },
         "/docs": { target, changeOrigin: true },
         "/openapi.json": { target, changeOrigin: true },
+        "/analytics": { target, changeOrigin: true },
       },
     },
   };
