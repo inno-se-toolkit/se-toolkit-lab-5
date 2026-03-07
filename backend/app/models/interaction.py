@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+from pydantic import Field as PydanticField
 from sqlmodel import Field, SQLModel
 
 # Ensure referenced FK target tables are registered in SQLModel metadata
@@ -51,4 +52,9 @@ class InteractionModel(SQLModel):
     learner_id: int
     item_id: int
     kind: str
-    timestamp: datetime
+    timestamp: datetime = PydanticField(alias="created_at")
+
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+    }
