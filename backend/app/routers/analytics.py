@@ -99,7 +99,7 @@ async def get_pass_rates(
     stmt = (
         select(
             ItemRecord.title.label("task"),
-            func.round(func.avg(InteractionLog.score), 1).label("avg_score"),
+            func.avg(InteractionLog.score).label("avg_score"),
             func.count(InteractionLog.id).label("attempts"),
         )
         .join(InteractionLog, InteractionLog.item_id == ItemRecord.id)
@@ -168,7 +168,7 @@ async def get_groups(
     stmt = (
         select(
             Learner.student_group.label("group"),
-            func.round(func.avg(InteractionLog.score), 1).label("avg_score"),
+            func.avg(InteractionLog.score).label("avg_score"),
             func.count(func.distinct(InteractionLog.learner_id)).label("students"),
         )
         .join(Learner, Learner.id == InteractionLog.learner_id)
