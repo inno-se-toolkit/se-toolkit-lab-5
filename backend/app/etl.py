@@ -20,6 +20,7 @@ from app.settings import settings
 # ---------------------------------------------------------------------------
 
 
+
 async def fetch_items() -> list[dict]:
     """Fetch the lab/task catalog from the autochecker API.
 
