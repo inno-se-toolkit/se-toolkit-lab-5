@@ -1,4 +1,4 @@
-"""Router for the ETL pipeline endpoint."""
+"""Pipeline router for ETL sync endpoint."""
 
 from fastapi import APIRouter, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -6,14 +6,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.database import get_session
 from app.etl import sync
 
-router = APIRouter()
+
+router = APIRouter(tags=["pipeline"])
 
 
 @router.post("/sync")
-async def post_sync(session: AsyncSession = Depends(get_session)):
-    """Trigger a data sync from the autochecker API.
+async def pipeline_sync(session: AsyncSession = Depends(get_session)) -> dict:
+    """Run the ETL pipeline to sync data from the autochecker API.
 
-    Fetches the latest items and logs, loads them into the database,
-    and returns a summary of what was synced.
+    Returns:
+        dict: {"new_records": int, "total_records": int}
     """
     return await sync(session)
