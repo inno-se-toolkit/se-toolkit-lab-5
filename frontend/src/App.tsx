@@ -1,5 +1,6 @@
 import { useState, useEffect, useReducer, FormEvent } from 'react'
 import './App.css'
+import Dashboard from './Dashboard'
 
 const STORAGE_KEY = 'api_key'
 
@@ -9,6 +10,8 @@ interface Item {
   title: string
   created_at: string
 }
+
+type ViewMode = 'items' | 'dashboard'
 
 type FetchState =
   | { status: 'idle' }
@@ -29,99 +32,184 @@ function fetchReducer(_state: FetchState, action: FetchAction): FetchState {
       return { status: 'success', items: action.data }
     case 'fetch_error':
       return { status: 'error', message: action.message }
+    default:
+      return { status: 'idle' }
   }
 }
 
 function App() {
-  const [token, setToken] = useState(
+  const [token, setToken] = useState<string>(
     () => localStorage.getItem(STORAGE_KEY) ?? '',
   )
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState<string>('')
+  const [view, setView] = useState<ViewMode>('items')
   const [fetchState, dispatch] = useReducer(fetchReducer, { status: 'idle' })
 
   useEffect(() => {
-    if (!token) return
+    if (!token) {
+      dispatch({ type: 'fetch_error', message: 'API key is missing.' })
+      return
+    }
 
     dispatch({ type: 'fetch_start' })
 
     fetch('/items/', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     })
       .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`)
+        }
+
         return res.json()
       })
-      .then((data: Item[]) => dispatch({ type: 'fetch_success', data }))
-      .catch((err: Error) =>
-        dispatch({ type: 'fetch_error', message: err.message }),
-      )
+      .then((data: Item[]) => {
+        dispatch({ type: 'fetch_success', data })
+      })
+      .catch((err: Error) => {
+        dispatch({ type: 'fetch_error', message: err.message })
+      })
   }, [token])
 
-  function handleConnect(e: FormEvent) {
+  function handleConnect(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
+
     const trimmed = draft.trim()
-    if (!trimmed) return
+    if (!trimmed) {
+      return
+    }
+
     localStorage.setItem(STORAGE_KEY, trimmed)
     setToken(trimmed)
+    setDraft('')
+    setView('items')
   }
 
   function handleDisconnect() {
     localStorage.removeItem(STORAGE_KEY)
     setToken('')
     setDraft('')
+    setView('items')
+    dispatch({ type: 'fetch_error', message: 'API key is missing.' })
   }
 
   if (!token) {
     return (
-      <form className="token-form" onSubmit={handleConnect}>
-        <h1>API Key</h1>
-        <p>Enter your API key to connect.</p>
-        <input
-          type="password"
-          placeholder="Token"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        <button type="submit">Connect</button>
-      </form>
+      <main className="app">
+        <section
+          style={{
+            maxWidth: 480,
+            margin: '48px auto',
+            padding: 24,
+            border: '1px solid #ddd',
+            borderRadius: 12,
+            background: '#fff',
+          }}
+        >
+          <h1>Connect API</h1>
+          <p>Paste your API key to access items and analytics.</p>
+
+          <form
+            onSubmit={handleConnect}
+            style={{ display: 'grid', gap: 12, marginTop: 16 }}
+          >
+            <input
+              type="password"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Enter API key"
+            />
+            <button type="submit">Connect</button>
+          </form>
+        </section>
+      </main>
     )
   }
 
   return (
-    <div>
-      <header className="app-header">
-        <h1>Items</h1>
-        <button className="btn-disconnect" onClick={handleDisconnect}>
-          Disconnect
-        </button>
+    <main className="app">
+      <header
+        className="app-header"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 16,
+          flexWrap: 'wrap',
+          marginBottom: 24,
+        }}
+      >
+        <div>
+          <h1>Lab 5 App</h1>
+          <p>Browse items or open the analytics dashboard.</p>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setView('items')}
+            disabled={view === 'items'}
+          >
+            Items
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('dashboard')}
+            disabled={view === 'dashboard'}
+          >
+            Dashboard
+          </button>
+          <button type="button" onClick={handleDisconnect}>
+            Disconnect
+          </button>
+        </div>
       </header>
 
-      {fetchState.status === 'loading' && <p>Loading...</p>}
-      {fetchState.status === 'error' && <p>Error: {fetchState.message}</p>}
+      {view === 'items' && (
+        <section>
+          <h2>Items</h2>
 
-      {fetchState.status === 'success' && (
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>ItemType</th>
-              <th>Title</th>
-              <th>Created at</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fetchState.items.map((item) => (
-              <tr key={item.id}>
-                <td>{item.id}</td>
-                <td>{item.type}</td>
-                <td>{item.title}</td>
-                <td>{item.created_at}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          {fetchState.status === 'loading' && <p>Loading...</p>}
+
+          {fetchState.status === 'error' && (
+            <p role="alert">Error: {fetchState.message}</p>
+          )}
+
+          {fetchState.status === 'success' && (
+            <>
+              {fetchState.items.length === 0 ? (
+                <p>No items found.</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Item type</th>
+                      <th>Title</th>
+                      <th>Created at</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fetchState.items.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.id}</td>
+                        <td>{item.type}</td>
+                        <td>{item.title}</td>
+                        <td>{item.created_at}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
+        </section>
       )}
-    </div>
+
+      {view === 'dashboard' && <Dashboard />}
+    </main>
   )
 }
 
