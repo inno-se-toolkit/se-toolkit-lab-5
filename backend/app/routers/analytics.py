@@ -160,3 +160,5 @@ async def get_groups(
         {"group": row.name, "avg_score": row.avg_score, "students": row.students}
         for row in result.all()
     ]
+
+    
