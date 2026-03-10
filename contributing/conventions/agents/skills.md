@@ -6,6 +6,10 @@ The format follows the [Agent Skills specification](https://agentskills.io/speci
 
 ## Directory structure
 
+`.agents/` is the canonical directory. Agent-specific directories such as
+`.claude/` and `.qwen/` are symlinks to `.agents/`; edit only files inside
+`.agents/`.
+
 A skill is a directory containing at minimum a `SKILL.md` file:
 
 ```

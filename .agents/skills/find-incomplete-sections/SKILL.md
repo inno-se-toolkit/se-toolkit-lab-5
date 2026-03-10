@@ -1,7 +1,6 @@
 ---
 name: find-incomplete-sections
 description: Find empty sections and sections containing TODO markers in task and wiki files
-disable-model-invocation: true
 argument-hint: "[path]"
 ---
 

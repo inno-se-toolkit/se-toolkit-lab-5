@@ -368,7 +368,7 @@ Tasks must be completable without LLMs unless the task explicitly states that st
 - Use simple, direct language in student-facing materials.
 - Provide fallback methods for every major operation.
 - The "Learning advice" section encourages LLM use for understanding, but tasks must not require it.
-- When a task explicitly requires AI use (e.g., "Generate tests with an AI agent"), mark it as a separate, clearly labeled part so students and reviewers can distinguish AI-required steps from AI-optional ones.
+- When a step's primary path requires AI use, add an `(AI)` suffix to its title (e.g., `#### 1.4.2. Implement the pipeline (AI)`). This lets students and reviewers instantly distinguish AI-required steps from AI-optional ones.
 
 ### 4.17. Multi-bug debugging tasks
 

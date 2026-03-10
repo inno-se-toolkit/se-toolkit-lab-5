@@ -1,7 +1,6 @@
 ---
 name: find-empty-sections
 description: Find markdown headings with no content below them
-disable-model-invocation: true
 argument-hint: "[path]"
 ---
 

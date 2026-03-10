@@ -47,7 +47,7 @@ Review a single file for problems — first conceptual and pedagogical issues (f
 - If a convention does not apply to the file (e.g., the file has no Docker commands), skip that category and note "Not applicable."
 - For `lab/tasks/setup.md` and `lab/tasks/setup-simple.md`: skip task-only conventions (Section 3 template, acceptance criteria format). Apply all [`contributing/conventions/writing/common.md`](../../../contributing/conventions/writing/common.md) conventions and all [`contributing/conventions/writing/setup.md`](../../../contributing/conventions/writing/setup.md) conventions.
 - For `contributing/conventions/conventions.md` itself: apply its own rules — the file is self-referential and must comply with the conventions it defines.
-- When referring to a section in the reviewed file, link to it using a markdown link whose URL is the reviewed file's path followed by `#` and the heading anchor. Do not use bare local anchors (`#...`) that would resolve to the review file itself.
+- When referring to a section in the reviewed file, link to it using a markdown link whose URL is a **relative path from the review file** to the reviewed file, followed by `#` and the heading anchor. Do not use bare local anchors (`#...`) that would resolve to the review file itself. Do not use repo-root-relative or absolute paths.
 
 ## Output format
 

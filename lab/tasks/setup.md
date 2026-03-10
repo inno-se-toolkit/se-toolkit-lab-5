@@ -419,7 +419,7 @@ A coding agent can help you write code, explain concepts, and debug issues.
   <img alt="Qwen response" src="../images/tasks/setup/qwen-response.png" style="width:300px"></img>
 </div>
 
-- Method 1: [Set up a `Qwen Code`-based agent](../../wiki/coding-agents.md#set-up-qwen-code).
+- Method 1: [Set up a `Qwen Code`-based agent](../../wiki/qwen.md#set-up-qwen-code).
 - Method 2: [Choose another coding agent](../../wiki/coding-agents.md#choose-and-use-a-coding-agent).
 
 ### 1.17. Set up the autochecker

@@ -1,4 +1,4 @@
-# Dashboard Front-end
+# Dashboard Frontend
 
 <h4>Time</h4>
 
@@ -6,7 +6,7 @@
 
 <h4>Purpose</h4>
 
-Add charts to the front-end to visualize the analytics data from Task 2, and learn to integrate a chart library into a `React` application.
+Add charts to the frontend to visualize the analytics data from Task 2, and learn to integrate a chart library into a `React` application.
 
 <h4>Context</h4>
 
@@ -25,7 +25,7 @@ An AI coding agent can help with the `Chart.js` integration.
   - [1.1. Follow the `Git workflow`](#11-follow-the-git-workflow)
   - [1.2. Create a `Lab Task` issue](#12-create-a-lab-task-issue)
   - [1.3. Install the chart library](#13-install-the-chart-library)
-  - [1.4. Create the dashboard component](#14-create-the-dashboard-component)
+  - [1.4. Create the dashboard component (AI)](#14-create-the-dashboard-component-ai)
   - [1.5. Add navigation](#15-add-navigation)
   - [1.6. Run the type checker](#16-run-the-type-checker)
   - [1.7. Verify locally](#17-verify-locally)
@@ -43,11 +43,11 @@ Follow the [`Git workflow`](../../../wiki/git-workflow.md#create-a-lab-task-issu
 
 ### 1.2. Create a `Lab Task` issue
 
-Title: `[Task] Dashboard Front-end`
+Title: `[Task] Dashboard Frontend`
 
 ### 1.3. Install the chart library
 
-1. To navigate to the front-end directory,
+1. To navigate to the frontend directory,
 
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
@@ -71,7 +71,7 @@ Title: `[Task] Dashboard Front-end`
    cd ..
    ```
 
-### 1.4. Create the dashboard component
+### 1.4. Create the dashboard component (AI)
 
 > [!NOTE]
 > The dashboard should display at least two of the following visualizations:
@@ -130,7 +130,7 @@ Title: `[Task] Dashboard Front-end`
 > [!IMPORTANT]
 > AI coding agents often generate code with type errors. `TypeScript` strict mode catches bugs like `undefined is not a function` **before** they reach the browser.
 
-1. To navigate to the front-end directory,
+1. To navigate to the frontend directory,
 
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
@@ -166,7 +166,7 @@ Title: `[Task] Dashboard Front-end`
 
 ### 1.7. Verify locally
 
-1. To navigate to the front-end directory,
+1. To navigate to the frontend directory,
 
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
@@ -178,21 +178,29 @@ Title: `[Task] Dashboard Front-end`
 
    1. Open the file [`frontend/.env.example`](../../../frontend/.env.example) ([how to open a file](../../../wiki/vs-code.md#open-the-file)).
    2. Copy it to `frontend/.env`.
-   3. Set `VITE_API_TARGET` to the URL of your back-end API, for example `http://<your-vm-ip-address>:42002`.
+   3. Set `VITE_API_TARGET` to the URL of your backend API, for example `http://<your-vm-ip-address>:42002`.
 
       If you changed [`CADDY_HOST_PORT`](../../../wiki/dotenv-docker-secret.md#caddy_host_port) in [`.env.docker.secret`](../../../wiki/dotenv-docker-secret.md#what-is-envdockersecret), use your value instead of `42002`.
 
-3. To install dependencies and start the dev server,
+3. To install dependencies,
 
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
-   npm install && npm run dev
+   npm install
    ```
 
-4. Open the URL shown in the terminal output in a browser.
-5. Connect with your API key.
-6. Navigate to the Dashboard page.
+4. To start the dev server,
+
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
+
+   ```terminal
+   npm run dev
+   ```
+
+5. Open the URL shown in the terminal output in a browser.
+6. Connect with your API key.
+7. Navigate to the Dashboard page.
 
    You should see charts rendering with data from the analytics endpoints.
 
@@ -230,17 +238,33 @@ Title: `[Task] Dashboard Front-end`
    cd se-toolkit-lab-5
    ```
 
-2. To pull your branch,
+2. To fetch updates from the remote,
 
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
    ```terminal
-   git fetch origin && git checkout <task-branch> && git pull
+   git fetch origin
+   ```
+
+3. To switch to your task branch,
+
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
+
+   ```terminal
+   git checkout <task-branch>
    ```
 
    Replace [`<task-branch>`](../../../wiki/git-workflow.md#task-branch).
 
-3. To restart the services,
+4. To pull the latest changes,
+
+   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
+
+   ```terminal
+   git pull
+   ```
+
+5. To restart the services,
 
    [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
 
@@ -248,12 +272,12 @@ Title: `[Task] Dashboard Front-end`
    docker compose --env-file .env.docker.secret up --build caddy -d
    ```
 
-4. Open in a browser: `http://<your-vm-ip-address>:42002`.
+6. Open in a browser: `http://<your-vm-ip-address>:42002`.
 
    If you changed [`CADDY_HOST_PORT`](../../../wiki/dotenv-docker-secret.md#caddy_host_port) in [`.env.docker.secret`](../../../wiki/dotenv-docker-secret.md#what-is-envdockersecret), use your value instead of `42002`.
 
-5. Connect with your API key.
-6. Navigate to the Dashboard page.
+7. Connect with your API key.
+8. Navigate to the Dashboard page.
 
    You should see charts rendering with data from the analytics endpoints.
 
@@ -285,7 +309,7 @@ Title: `[Task] Dashboard Front-end`
 - [ ] Issue has the correct title.
 - [ ] `react-chartjs-2` is listed in `frontend/package.json` dependencies.
 - [ ] The Dashboard component imports from `Chart.js`.
-- [ ] The front-end renders at least one `<canvas>` element (chart).
+- [ ] The frontend renders at least one `<canvas>` element (chart).
 - [ ] Navigation exists between the Items page and the Dashboard.
 - [ ] `npm run typecheck` passes with no errors.
 - [ ] The production build is deployed on the VM.
