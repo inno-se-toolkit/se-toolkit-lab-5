@@ -1,0 +1,22 @@
+[0;1;32m●[0m docker.service - Docker Application Container Engine
+     Loaded: loaded (]8;;file://Tool4001/usr/lib/systemd/system/docker.service/usr/lib/systemd/system/docker.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Tue 2026-03-10 22:07:51 MSK; 1h 19min ago
+TriggeredBy: [0;1;32m●[0m docker.socket
+       Docs: ]8;;https://docs.docker.comhttps://docs.docker.com]8;;
+   Main PID: 885 (dockerd)
+      Tasks: 9
+     Memory: 114.0M (peak: 114.3M)
+        CPU: 1.191s
+     CGroup: /system.slice/docker.service
+             └─[0;38;5;245m885 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock[0m
+
+Mar 10 22:07:50 Tool4001 dockerd[885]: time="2026-03-10T22:07:50.885076254+03:00" level=info msg="Restoring containers: start."
+Mar 10 22:07:50 Tool4001 dockerd[885]: time="2026-03-10T22:07:50.929850314+03:00" level=info msg="Deleting nftables IPv4 rules" error="exit status 1"
+Mar 10 22:07:50 Tool4001 dockerd[885]: time="2026-03-10T22:07:50.937856546+03:00" level=info msg="Deleting nftables IPv6 rules" error="exit status 1"
+Mar 10 22:07:51 Tool4001 dockerd[885]: time="2026-03-10T22:07:51.666544944+03:00" level=info msg="Loading containers: done."
+Mar 10 22:07:51 Tool4001 dockerd[885]: time="2026-03-10T22:07:51.690212854+03:00" level=info msg="Docker daemon" commit=6bc6209 containerd-snapshotter=true storage-driver=overlayfs version=29.2.1
+Mar 10 22:07:51 Tool4001 dockerd[885]: time="2026-03-10T22:07:51.690643191+03:00" level=info msg="Initializing buildkit"
+Mar 10 22:07:51 Tool4001 dockerd[885]: time="2026-03-10T22:07:51.845459702+03:00" level=info msg="Completed buildkit initialization"
+Mar 10 22:07:51 Tool4001 dockerd[885]: time="2026-03-10T22:07:51.856881792+03:00" level=info msg="Daemon has completed initialization"
+Mar 10 22:07:51 Tool4001 systemd[1]: Started docker.service - Docker Application Container Engine.
+Mar 10 22:07:51 Tool4001 dockerd[885]: time="2026-03-10T22:07:51.856996915+03:00" level=info msg="API listen on /run/docker.sock"
