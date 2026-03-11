@@ -1,14 +1,18 @@
 """Router for analytics endpoints.
 
+
 Each endpoint performs SQL aggregation queries on the interaction data
 populated by the ETL pipeline. All endpoints require a `lab` query
 parameter to filter results by lab (e.g., "lab-01").
 """
 
+
 from fastapi import APIRouter, Depends, Query
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
+from app.auth import get_api_key
+
 
 router = APIRouter()
 
@@ -17,6 +21,7 @@ router = APIRouter()
 async def get_scores(
     lab: str = Query(..., description="Lab identifier, e.g. 'lab-01'"),
     session: AsyncSession = Depends(get_session),
+    api_key: str = Depends(get_api_key),
 ):
     """Score distribution histogram for a given lab.
 
@@ -37,6 +42,7 @@ async def get_scores(
 async def get_pass_rates(
     lab: str = Query(..., description="Lab identifier, e.g. 'lab-01'"),
     session: AsyncSession = Depends(get_session),
+    api_key: str = Depends(get_api_key),
 ):
     """Per-task pass rates for a given lab.
 
@@ -56,6 +62,7 @@ async def get_pass_rates(
 async def get_timeline(
     lab: str = Query(..., description="Lab identifier, e.g. 'lab-01'"),
     session: AsyncSession = Depends(get_session),
+    api_key: str = Depends(get_api_key),
 ):
     """Submissions per day for a given lab.
 
@@ -74,6 +81,7 @@ async def get_timeline(
 async def get_groups(
     lab: str = Query(..., description="Lab identifier, e.g. 'lab-01'"),
     session: AsyncSession = Depends(get_session),
+    api_key: str = Depends(get_api_key),
 ):
     """Per-group performance for a given lab.
 
@@ -88,5 +96,3 @@ async def get_groups(
     - Order by group name
     """
     raise NotImplementedError
-  #Task 2
-  
