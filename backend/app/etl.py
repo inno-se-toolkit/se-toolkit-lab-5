@@ -145,3 +145,4 @@ async def sync(session: AsyncSession) -> dict:
                       "total_records": <total interactions in DB>}
     """
     raise NotImplementedError
+# tmp change for task 1
