@@ -1,5 +1,6 @@
 import { useState, useEffect, useReducer, FormEvent } from 'react'
 import './App.css'
+import Dashboard from './Dashboard'  // ← Импортируем Dashboard
 
 const STORAGE_KEY = 'api_key'
 
@@ -32,11 +33,15 @@ function fetchReducer(_state: FetchState, action: FetchAction): FetchState {
   }
 }
 
+// ← Добавляем тип для страницы
+type Page = 'items' | 'dashboard'
+
 function App() {
   const [token, setToken] = useState(
     () => localStorage.getItem(STORAGE_KEY) ?? '',
   )
   const [draft, setDraft] = useState('')
+  const [page, setPage] = useState<Page>('items')  // ← Состояние для навигации
   const [fetchState, dispatch] = useReducer(fetchReducer, { status: 'idle' })
 
   useEffect(() => {
@@ -69,6 +74,7 @@ function App() {
     localStorage.removeItem(STORAGE_KEY)
     setToken('')
     setDraft('')
+    setPage('items')  // ← Сбрасываем на items при отключении
   }
 
   if (!token) {
@@ -90,37 +96,61 @@ function App() {
   return (
     <div>
       <header className="app-header">
-        <h1>Items</h1>
+        <h1>Learning Management Service</h1>
+
+        {/* ← Кнопки навигации */}
+        <nav style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+          <button
+            className={page === 'items' ? 'active' : ''}
+            onClick={() => setPage('items')}
+          >
+            Items
+          </button>
+          <button
+            className={page === 'dashboard' ? 'active' : ''}
+            onClick={() => setPage('dashboard')}
+          >
+            Dashboard
+          </button>
+        </nav>
+
         <button className="btn-disconnect" onClick={handleDisconnect}>
           Disconnect
         </button>
       </header>
 
-      {fetchState.status === 'loading' && <p>Loading...</p>}
-      {fetchState.status === 'error' && <p>Error: {fetchState.message}</p>}
+      {/* ← Рендерим нужную страницу */}
+      {page === 'items' && (
+        <>
+          {fetchState.status === 'loading' && <p>Loading...</p>}
+          {fetchState.status === 'error' && <p>Error: {fetchState.message}</p>}
 
-      {fetchState.status === 'success' && (
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>ItemType</th>
-              <th>Title</th>
-              <th>Created at</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fetchState.items.map((item) => (
-              <tr key={item.id}>
-                <td>{item.id}</td>
-                <td>{item.type}</td>
-                <td>{item.title}</td>
-                <td>{item.created_at}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          {fetchState.status === 'success' && (
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>ItemType</th>
+                  <th>Title</th>
+                  <th>Created at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fetchState.items.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.id}</td>
+                    <td>{item.type}</td>
+                    <td>{item.title}</td>
+                    <td>{item.created_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
+
+      {page === 'dashboard' && <Dashboard />}  // ← Рендерим Dashboard
     </div>
   )
 }
