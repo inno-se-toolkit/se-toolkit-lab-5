@@ -1,163 +1,227 @@
-# backend/app/etl.py
-from datetime import datetime, timedelta, timezone
-from typing import Any
+"""ETL pipeline: fetch data from the autochecker API and load it into the database.
+
+The autochecker dashboard API provides two endpoints:
+- GET /api/items — lab/task catalog
+- GET /api/logs  — anonymized check results (supports ?since= and ?limit= params)
+
+Both require HTTP Basic Auth (email + password from settings).
+"""
+
+from datetime import datetime
 
 import httpx
-from sqlalchemy import func, insert, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlmodel import func, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.models.interaction import InteractionLog
+from app.models.item import ItemRecord
+from app.models.learner import Learner
 from app.settings import settings
-from app.models import Item, Learner, InteractionLog  # ← твои модели
 
 
-# ===================================================================
-# 1. fetch_items()
-# ===================================================================
 async def fetch_items() -> list[dict]:
-    """Получаем полный каталог лабораторных и задач."""
-    auth = httpx.BasicAuth(
-        username=settings.AUTOCHECKER_EMAIL,
-        password=settings.AUTOCHECKER_PASSWORD,
-    )
-    async with httpx.AsyncClient(auth=auth, timeout=30.0) as client:
-        url = f"{settings.AUTOCHECKER_API_URL}/api/items"
+    url = f"{settings.autochecker_api_url}/api/items"
+
+    async with httpx.AsyncClient(
+        auth=(settings.autochecker_email, settings.autochecker_password),
+        timeout=30.0,
+    ) as client:
         response = await client.get(url)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+
+    if not isinstance(data, list):
+        raise ValueError("Unexpected /api/items response format")
+
+    return data
 
 
-# ===================================================================
-# 2. fetch_logs()
-# ===================================================================
 async def fetch_logs(since: datetime | None = None) -> list[dict]:
-    """Получаем все логи проверок с пагинацией (has_more)."""
-    auth = httpx.BasicAuth(
-        username=settings.AUTOCHECKER_EMAIL,
-        password=settings.AUTOCHECKER_PASSWORD,
-    )
-
-    # Если первый запуск — начинаем с очень старой даты
-    current_since = since or datetime(2020, 1, 1, tzinfo=timezone.utc)
-
+    url = f"{settings.autochecker_api_url}/api/logs"
     all_logs: list[dict] = []
-    limit = 200  # можно увеличить
+    current_since = since
 
-    async with httpx.AsyncClient(auth=auth, timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        auth=(settings.autochecker_email, settings.autochecker_password),
+        timeout=60.0,
+    ) as client:
         while True:
-            params: dict[str, Any] = {"limit": limit}
-            if current_since:
-                params["since"] = current_since.isoformat().replace("+00:00", "Z")
+            params: dict[str, str | int] = {"limit": 500}
+            if current_since is not None:
+                params["since"] = _to_api_datetime(current_since)
 
-            url = f"{settings.AUTOCHECKER_API_URL}/api/logs"
             response = await client.get(url, params=params)
             response.raise_for_status()
-            data = response.json()
+            payload = response.json()
 
-            batch = data.get("logs", [])
+            if not isinstance(payload, dict):
+                raise ValueError("Unexpected /api/logs response format")
+
+            batch = payload.get("logs", [])
+            has_more = payload.get("has_more", False)
+
+            if not isinstance(batch, list):
+                raise ValueError("Invalid logs payload")
+
             all_logs.extend(batch)
 
-            if not data.get("has_more", False) or not batch:
+            if not has_more or not batch:
                 break
 
-            # Берём самый новый timestamp из пачки и сдвигаемся дальше
-            last_ts = max(log["submitted_at"] for log in batch)
-            current_since = datetime.fromisoformat(
-                last_ts.replace("Z", "+00:00")
-            ) + timedelta(microseconds=1)
+            current_since = _parse_api_datetime(batch[-1]["submitted_at"])
 
     return all_logs
 
 
-# ===================================================================
-# 3. load_items()
-# ===================================================================
-async def load_items(session: AsyncSession, items_raw: list[dict]) -> None:
-    """Вставляем/обновляем лабораторные и задачи (idempotent)."""
-    stmt = pg_insert(Item).values(
-        [
-            {
-                "lab": item["lab"],
-                "task": item.get("task"),
-                "title": item["title"],
-                "type": item["type"],
-            }
-            for item in items_raw
-        ]
-    )
-    stmt = stmt.on_conflict_do_nothing(index_elements=["lab", "task"])
-    await session.execute(stmt)
+async def load_items(items: list[dict], session: AsyncSession) -> int:
+    created_count = 0
+    lab_map: dict[str, ItemRecord] = {}
+
+    labs = [item for item in items if item.get("type") == "lab"]
+    tasks = [item for item in items if item.get("type") == "task"]
+
+    for lab in labs:
+        lab_short_id = lab["lab"]
+        lab_title = lab["title"]
+
+        existing_lab = (
+            await session.exec(
+                select(ItemRecord).where(
+                    ItemRecord.type == "lab",
+                    ItemRecord.title == lab_title,
+                )
+            )
+        ).first()
+
+        if existing_lab is None:
+            existing_lab = ItemRecord(
+                type="lab",
+                title=lab_title,
+            )
+            session.add(existing_lab)
+            await session.flush()
+            created_count += 1
+
+        lab_map[lab_short_id] = existing_lab
+
+    for task in tasks:
+        task_title = task["title"]
+        parent_lab = lab_map.get(task["lab"])
+
+        if parent_lab is None:
+            continue
+
+        existing_task = (
+            await session.exec(
+                select(ItemRecord).where(
+                    ItemRecord.type == "task",
+                    ItemRecord.title == task_title,
+                    ItemRecord.parent_id == parent_lab.id,
+                )
+            )
+        ).first()
+
+        if existing_task is None:
+            existing_task = ItemRecord(
+                type="task",
+                title=task_title,
+                parent_id=parent_lab.id,
+            )
+            session.add(existing_task)
+            await session.flush()
+            created_count += 1
+
     await session.commit()
+    return created_count
 
 
-# ===================================================================
-# 4. load_logs()
-# ===================================================================
 async def load_logs(
-    session: AsyncSession, logs_raw: list[dict], items_raw: list[dict]
-) -> None:
-    """Создаём/обновляем learners + interaction logs (idempotent)."""
-    # Для быстрого поиска item_id по (lab, task)
-    item_map = {(it["lab"], it.get("task")): it["title"] for it in items_raw}
+    logs: list[dict], items_catalog: list[dict], session: AsyncSession
+) -> int:
+    created_count = 0
 
-    for log in logs_raw:
-        # 1. Learner (find or create)
-        learner = await session.scalar(
-            select(Learner).where(Learner.external_id == log["student_id"])
-        )
-        if not learner:
+    title_lookup: dict[tuple[str, str | None], str] = {}
+    for item in items_catalog:
+        title_lookup[(item["lab"], item.get("task"))] = item["title"]
+
+    for log in logs:
+        learner = (
+            await session.exec(
+                select(Learner).where(Learner.external_id == log["student_id"])
+            )
+        ).first()
+
+        if learner is None:
             learner = Learner(
                 external_id=log["student_id"],
-                group=log["group"],
+                student_group=log.get("group", ""),
             )
             session.add(learner)
             await session.flush()
 
-        # 2. InteractionLog (idempotent по external_id)
-        submitted_at = datetime.fromisoformat(
-            log["submitted_at"].replace("Z", "+00:00")
-        )
+        item_title = title_lookup.get((log["lab"], log.get("task")))
+        if item_title is None:
+            continue
 
-        stmt = pg_insert(InteractionLog).values(
+        item = (
+            await session.exec(
+                select(ItemRecord).where(ItemRecord.title == item_title)
+            )
+        ).first()
+
+        if item is None:
+            continue
+
+        existing_log = (
+            await session.exec(
+                select(InteractionLog).where(InteractionLog.external_id == log["id"])
+            )
+        ).first()
+
+        if existing_log is not None:
+            continue
+
+        interaction = InteractionLog(
+            external_id=log["id"],
             learner_id=learner.id,
-            # item_id можно оставить None или найти, но по требованиям лабы достаточно external_id
-            external_id=str(log["id"]),
-            score=float(log["score"]),
-            checks_passed=log["passed"],
-            checks_failed=log["failed"],
-            checks_total=log["total"],
-            checks=log.get("checks", []),
-            submitted_at=submitted_at,
+            item_id=item.id,
+            kind="attempt",
+            score=log.get("score"),
+            checks_passed=log.get("passed"),
+            checks_total=log.get("total"),
+            created_at=_parse_api_datetime(log["submitted_at"]),
         )
-        stmt = stmt.on_conflict_do_nothing(index_elements=["external_id"])
-        await session.execute(stmt)
+        session.add(interaction)
+        created_count += 1
 
     await session.commit()
+    return created_count
 
 
-# ===================================================================
-# 5. sync() — главная функция пайплайна
-# ===================================================================
 async def sync(session: AsyncSession) -> dict:
-    """Полный цикл ETL: items → logs + статистика."""
-    # 1. Items
-    items_raw = await fetch_items()
-    await load_items(session, items_raw)
+    items = await fetch_items()
+    await load_items(items, session)
 
-    # 2. Последняя дата в БД
-    max_ts = await session.scalar(select(func.max(InteractionLog.submitted_at)))
+    last_synced_at = (
+        await session.exec(select(func.max(InteractionLog.created_at)))
+    ).one()
 
-    # 3. Logs (инкрементально)
-    logs_raw = await fetch_logs(since=max_ts)
+    logs = await fetch_logs(last_synced_at)
+    new_records = await load_logs(logs, items, session)
 
-    # 4. Загружаем логи
-    await load_logs(session, logs_raw, items_raw)
-
-    # 5. Статистика
-    new_records = len(logs_raw)
-    total_records = await session.scalar(select(func.count(InteractionLog.id)))
+    total_records = (
+        await session.exec(select(func.count()).select_from(InteractionLog))
+    ).one()
 
     return {
-        "new_records": new_records,
-        "total_records": total_records or 0,
+        "new_records": int(new_records),
+        "total_records": int(total_records),
     }
+
+
+def _parse_api_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+
+
+def _to_api_datetime(value: datetime) -> str:
+    return value.isoformat() + "Z"
