@@ -1,147 +1,163 @@
-"""ETL pipeline: fetch data from the autochecker API and load it into the database.
+# backend/app/etl.py
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
-The autochecker dashboard API provides two endpoints:
-- GET /api/items — lab/task catalog
-- GET /api/logs  — anonymized check results (supports ?since= and ?limit= params)
-
-Both require HTTP Basic Auth (email + password from settings).
-"""
-
-from datetime import datetime
-
-from sqlmodel.ext.asyncio.session import AsyncSession
+import httpx
+from sqlalchemy import func, insert, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.settings import settings
+from app.models import Item, Learner, InteractionLog  # ← твои модели
 
 
-# ---------------------------------------------------------------------------
-# Extract — fetch data from the autochecker API
-# ---------------------------------------------------------------------------
-
-
+# ===================================================================
+# 1. fetch_items()
+# ===================================================================
 async def fetch_items() -> list[dict]:
-    """Fetch the lab/task catalog from the autochecker API.
-
-    TODO: Implement this function.
-    - Use httpx.AsyncClient to GET {settings.autochecker_api_url}/api/items
-    - Pass HTTP Basic Auth using settings.autochecker_email and
-      settings.autochecker_password
-    - The response is a JSON array of objects with keys:
-      lab (str), task (str | null), title (str), type ("lab" | "task")
-    - Return the parsed list of dicts
-    - Raise an exception if the response status is not 200
-    """
-    raise NotImplementedError
+    """Получаем полный каталог лабораторных и задач."""
+    auth = httpx.BasicAuth(
+        username=settings.AUTOCHECKER_EMAIL,
+        password=settings.AUTOCHECKER_PASSWORD,
+    )
+    async with httpx.AsyncClient(auth=auth, timeout=30.0) as client:
+        url = f"{settings.AUTOCHECKER_API_URL}/api/items"
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.json()
 
 
+# ===================================================================
+# 2. fetch_logs()
+# ===================================================================
 async def fetch_logs(since: datetime | None = None) -> list[dict]:
-    """Fetch check results from the autochecker API.
+    """Получаем все логи проверок с пагинацией (has_more)."""
+    auth = httpx.BasicAuth(
+        username=settings.AUTOCHECKER_EMAIL,
+        password=settings.AUTOCHECKER_PASSWORD,
+    )
 
-    TODO: Implement this function.
-    - Use httpx.AsyncClient to GET {settings.autochecker_api_url}/api/logs
-    - Pass HTTP Basic Auth using settings.autochecker_email and
-      settings.autochecker_password
-    - Query parameters:
-      - limit=500 (fetch in batches)
-      - since={iso timestamp} if provided (for incremental sync)
-    - The response JSON has shape:
-      {"logs": [...], "count": int, "has_more": bool}
-    - Handle pagination: keep fetching while has_more is True
-      - Use the submitted_at of the last log as the new "since" value
-    - Return the combined list of all log dicts from all pages
-    """
-    raise NotImplementedError
+    # Если первый запуск — начинаем с очень старой даты
+    current_since = since or datetime(2020, 1, 1, tzinfo=timezone.utc)
 
+    all_logs: list[dict] = []
+    limit = 200  # можно увеличить
 
-# ---------------------------------------------------------------------------
-# Load — insert fetched data into the local database
-# ---------------------------------------------------------------------------
+    async with httpx.AsyncClient(auth=auth, timeout=30.0) as client:
+        while True:
+            params: dict[str, Any] = {"limit": limit}
+            if current_since:
+                params["since"] = current_since.isoformat().replace("+00:00", "Z")
 
+            url = f"{settings.AUTOCHECKER_API_URL}/api/logs"
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
 
-async def load_items(items: list[dict], session: AsyncSession) -> int:
-    """Load items (labs and tasks) into the database.
+            batch = data.get("logs", [])
+            all_logs.extend(batch)
 
-    TODO: Implement this function.
-    - Import ItemRecord from app.models.item
-    - Process labs first (items where type="lab"):
-      - For each lab, check if an item with type="lab" and matching title
-        already exists (SELECT)
-      - If not, INSERT a new ItemRecord(type="lab", title=lab_title)
-      - Build a dict mapping the lab's short ID (the "lab" field, e.g.
-        "lab-01") to the lab's database record, so you can look up
-        parent IDs when processing tasks
-    - Then process tasks (items where type="task"):
-      - Find the parent lab item using the task's "lab" field (e.g.
-        "lab-01") as the key into the dict you built above
-      - Check if a task with this title and parent_id already exists
-      - If not, INSERT a new ItemRecord(type="task", title=task_title,
-        parent_id=lab_item.id)
-    - Commit after all inserts
-    - Return the number of newly created items
-    """
-    raise NotImplementedError
+            if not data.get("has_more", False) or not batch:
+                break
+
+            # Берём самый новый timestamp из пачки и сдвигаемся дальше
+            last_ts = max(log["submitted_at"] for log in batch)
+            current_since = datetime.fromisoformat(
+                last_ts.replace("Z", "+00:00")
+            ) + timedelta(microseconds=1)
+
+    return all_logs
 
 
+# ===================================================================
+# 3. load_items()
+# ===================================================================
+async def load_items(session: AsyncSession, items_raw: list[dict]) -> None:
+    """Вставляем/обновляем лабораторные и задачи (idempotent)."""
+    stmt = pg_insert(Item).values(
+        [
+            {
+                "lab": item["lab"],
+                "task": item.get("task"),
+                "title": item["title"],
+                "type": item["type"],
+            }
+            for item in items_raw
+        ]
+    )
+    stmt = stmt.on_conflict_do_nothing(index_elements=["lab", "task"])
+    await session.execute(stmt)
+    await session.commit()
+
+
+# ===================================================================
+# 4. load_logs()
+# ===================================================================
 async def load_logs(
-    logs: list[dict], items_catalog: list[dict], session: AsyncSession
-) -> int:
-    """Load interaction logs into the database.
+    session: AsyncSession, logs_raw: list[dict], items_raw: list[dict]
+) -> None:
+    """Создаём/обновляем learners + interaction logs (idempotent)."""
+    # Для быстрого поиска item_id по (lab, task)
+    item_map = {(it["lab"], it.get("task")): it["title"] for it in items_raw}
 
-    Args:
-        logs: Raw log dicts from the API (each has lab, task, student_id, etc.)
-        items_catalog: Raw item dicts from fetch_items() — needed to map
-            short IDs (e.g. "lab-01", "setup") to item titles stored in the DB.
-        session: Database session.
+    for log in logs_raw:
+        # 1. Learner (find or create)
+        learner = await session.scalar(
+            select(Learner).where(Learner.external_id == log["student_id"])
+        )
+        if not learner:
+            learner = Learner(
+                external_id=log["student_id"],
+                group=log["group"],
+            )
+            session.add(learner)
+            await session.flush()
 
-    TODO: Implement this function.
-    - Import Learner from app.models.learner
-    - Import InteractionLog from app.models.interaction
-    - Import ItemRecord from app.models.item
-    - Build a lookup from (lab_short_id, task_short_id) to item title
-      using items_catalog. For labs, the key is (lab, None). For tasks,
-      the key is (lab, task). The value is the item's title.
-    - For each log dict:
-      1. Find or create a Learner by external_id (log["student_id"])
-         - If creating, set student_group from log["group"]
-      2. Find the matching item in the database:
-         - Use the lookup to get the title for (log["lab"], log["task"])
-         - Query the DB for an ItemRecord with that title
-         - Skip this log if no matching item is found
-      3. Check if an InteractionLog with this external_id already exists
-         (for idempotent upsert — skip if it does)
-      4. Create InteractionLog with:
-         - external_id = log["id"]
-         - learner_id = learner.id
-         - item_id = item.id
-         - kind = "attempt"
-         - score = log["score"]
-         - checks_passed = log["passed"]
-         - checks_total = log["total"]
-         - created_at = parsed log["submitted_at"]
-    - Commit after all inserts
-    - Return the number of newly created interactions
-    """
-    raise NotImplementedError
+        # 2. InteractionLog (idempotent по external_id)
+        submitted_at = datetime.fromisoformat(
+            log["submitted_at"].replace("Z", "+00:00")
+        )
 
+        stmt = pg_insert(InteractionLog).values(
+            learner_id=learner.id,
+            # item_id можно оставить None или найти, но по требованиям лабы достаточно external_id
+            external_id=str(log["id"]),
+            score=float(log["score"]),
+            checks_passed=log["passed"],
+            checks_failed=log["failed"],
+            checks_total=log["total"],
+            checks=log.get("checks", []),
+            submitted_at=submitted_at,
+        )
+        stmt = stmt.on_conflict_do_nothing(index_elements=["external_id"])
+        await session.execute(stmt)
 
-# ---------------------------------------------------------------------------
-# Orchestrator
-# ---------------------------------------------------------------------------
+    await session.commit()
 
 
+# ===================================================================
+# 5. sync() — главная функция пайплайна
+# ===================================================================
 async def sync(session: AsyncSession) -> dict:
-    """Run the full ETL pipeline.
+    """Полный цикл ETL: items → logs + статистика."""
+    # 1. Items
+    items_raw = await fetch_items()
+    await load_items(session, items_raw)
 
-    TODO: Implement this function.
-    - Step 1: Fetch items from the API (keep the raw list) and load them
-      into the database
-    - Step 2: Determine the last synced timestamp
-      - Query the most recent created_at from InteractionLog
-      - If no records exist, since=None (fetch everything)
-    - Step 3: Fetch logs since that timestamp and load them
-      - Pass the raw items list to load_logs so it can map short IDs
-        to titles
-    - Return a dict: {"new_records": <number of new interactions>,
-                      "total_records": <total interactions in DB>}
-    """
-    raise NotImplementedError
+    # 2. Последняя дата в БД
+    max_ts = await session.scalar(select(func.max(InteractionLog.submitted_at)))
+
+    # 3. Logs (инкрементально)
+    logs_raw = await fetch_logs(since=max_ts)
+
+    # 4. Загружаем логи
+    await load_logs(session, logs_raw, items_raw)
+
+    # 5. Статистика
+    new_records = len(logs_raw)
+    total_records = await session.scalar(select(func.count(InteractionLog.id)))
+
+    return {
+        "new_records": new_records,
+        "total_records": total_records or 0,
+    }
