@@ -55,7 +55,65 @@ tr:nth-child(even) {
   margin: 0;
 }
 
+.header-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 .btn-disconnect {
   padding: 0.25rem 0.75rem;
   font-size: 0.85rem;
+}
+
+.btn-nav {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-nav:hover {
+  background-color: #0056b3;
+}
+
+/* Dashboard */
+
+.dashboard-controls {
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-controls select {
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.dashboard-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 2rem;
+}
+
+.chart-container {
+  background: #fff;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.chart-container h2 {
+  margin-top: 0;
+  font-size: 1.25rem;
+  color: #333;
+}
+
+.chart-container table {
+  width: 100%;
+  font-size: 0.9rem;
 }
