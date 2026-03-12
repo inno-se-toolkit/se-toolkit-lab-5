@@ -9,6 +9,7 @@ Both require HTTP Basic Auth (email + password from settings).
 
 from datetime import datetime
 
+import httpx
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.settings import settings
@@ -22,7 +23,6 @@ from app.settings import settings
 async def fetch_items() -> list[dict]:
     """Fetch the lab/task catalog from the autochecker API.
 
-    TODO: Implement this function.
     - Use httpx.AsyncClient to GET {settings.autochecker_api_url}/api/items
     - Pass HTTP Basic Auth using settings.autochecker_email and
       settings.autochecker_password
@@ -31,7 +31,13 @@ async def fetch_items() -> list[dict]:
     - Return the parsed list of dicts
     - Raise an exception if the response status is not 200
     """
-    raise NotImplementedError
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{settings.autochecker_api_url}/api/items",
+            auth=(settings.autochecker_email, settings.autochecker_password),
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 async def fetch_logs(since: datetime | None = None) -> list[dict]:
