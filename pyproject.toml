@@ -106,6 +106,7 @@ reportIncompatibleVariableOverride = "none"
 testpaths = ["backend/tests"]
 pythonpath = ["backend"]
 asyncio_mode = "auto"
+norecursedirs = [".venv", ".direnv", ".claude", ".qwen", ".*"]
 
 [tool.ty.src]
 include = ["backend"]
