@@ -1,163 +1,213 @@
-# backend/app/etl.py
-from datetime import datetime, timedelta, timezone
-from typing import Any
+"""ETL pipeline: fetch data from the autochecker API and load it into the database.
+
+The autochecker dashboard API provides two endpoints:
+- GET /api/items — lab/task catalog
+- GET /api/logs  — anonymized check results (supports ?since= and ?limit= params)
+
+Both require HTTP Basic Auth (email + password from settings).
+"""
+
+from datetime import datetime
 
 import httpx
-from sqlalchemy import func, insert, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import func
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.settings import settings
-from app.models import Item, Learner, InteractionLog  # ← твои модели
 
 
-# ===================================================================
-# 1. fetch_items()
-# ===================================================================
+# ---------------------------------------------------------------------------
+# Extract — fetch data from the autochecker API
+# ---------------------------------------------------------------------------
+
+
 async def fetch_items() -> list[dict]:
-    """Получаем полный каталог лабораторных и задач."""
-    auth = httpx.BasicAuth(
-        username=settings.AUTOCHECKER_EMAIL,
-        password=settings.AUTOCHECKER_PASSWORD,
-    )
-    async with httpx.AsyncClient(auth=auth, timeout=30.0) as client:
-        url = f"{settings.AUTOCHECKER_API_URL}/api/items"
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json()
+    """Fetch the lab/task catalog from the autochecker API."""
+    url = f"{settings.autochecker_api_url}/api/items"
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            url,
+            auth=(settings.autochecker_email, settings.autochecker_password),
+        )
+
+    response.raise_for_status()
+    return response.json()
 
 
-# ===================================================================
-# 2. fetch_logs()
-# ===================================================================
 async def fetch_logs(since: datetime | None = None) -> list[dict]:
-    """Получаем все логи проверок с пагинацией (has_more)."""
-    auth = httpx.BasicAuth(
-        username=settings.AUTOCHECKER_EMAIL,
-        password=settings.AUTOCHECKER_PASSWORD,
-    )
-
-    # Если первый запуск — начинаем с очень старой даты
-    current_since = since or datetime(2020, 1, 1, tzinfo=timezone.utc)
-
+    """Fetch check results from the autochecker API."""
+    url = f"{settings.autochecker_api_url}/api/logs"
     all_logs: list[dict] = []
-    limit = 200  # можно увеличить
+    cursor = since
 
-    async with httpx.AsyncClient(auth=auth, timeout=30.0) as client:
+    async with httpx.AsyncClient() as client:
         while True:
-            params: dict[str, Any] = {"limit": limit}
-            if current_since:
-                params["since"] = current_since.isoformat().replace("+00:00", "Z")
+            params: dict[str, str | int] = {"limit": 500}
+            if cursor is not None:
+                params["since"] = cursor.isoformat()
 
-            url = f"{settings.AUTOCHECKER_API_URL}/api/logs"
-            response = await client.get(url, params=params)
+            response = await client.get(
+                url,
+                params=params,
+                auth=(settings.autochecker_email, settings.autochecker_password),
+            )
             response.raise_for_status()
-            data = response.json()
 
-            batch = data.get("logs", [])
+            payload = response.json()
+            batch = payload.get("logs", [])
             all_logs.extend(batch)
 
-            if not data.get("has_more", False) or not batch:
+            if not payload.get("has_more") or not batch:
                 break
 
-            # Берём самый новый timestamp из пачки и сдвигаемся дальше
-            last_ts = max(log["submitted_at"] for log in batch)
-            current_since = datetime.fromisoformat(
-                last_ts.replace("Z", "+00:00")
-            ) + timedelta(microseconds=1)
+            cursor = datetime.fromisoformat(batch[-1]["submitted_at"].replace("Z", "+00:00"))
 
     return all_logs
 
 
-# ===================================================================
-# 3. load_items()
-# ===================================================================
-async def load_items(session: AsyncSession, items_raw: list[dict]) -> None:
-    """Вставляем/обновляем лабораторные и задачи (idempotent)."""
-    stmt = pg_insert(Item).values(
-        [
-            {
-                "lab": item["lab"],
-                "task": item.get("task"),
-                "title": item["title"],
-                "type": item["type"],
-            }
-            for item in items_raw
-        ]
-    )
-    stmt = stmt.on_conflict_do_nothing(index_elements=["lab", "task"])
-    await session.execute(stmt)
-    await session.commit()
+# ---------------------------------------------------------------------------
+# Load — insert fetched data into the local database
+# ---------------------------------------------------------------------------
 
 
-# ===================================================================
-# 4. load_logs()
-# ===================================================================
-async def load_logs(
-    session: AsyncSession, logs_raw: list[dict], items_raw: list[dict]
-) -> None:
-    """Создаём/обновляем learners + interaction logs (idempotent)."""
-    # Для быстрого поиска item_id по (lab, task)
-    item_map = {(it["lab"], it.get("task")): it["title"] for it in items_raw}
+async def load_items(items: list[dict], session: AsyncSession) -> int:
+    """Load items (labs and tasks) into the database."""
+    from app.models.item import ItemRecord
 
-    for log in logs_raw:
-        # 1. Learner (find or create)
-        learner = await session.scalar(
-            select(Learner).where(Learner.external_id == log["student_id"])
+    created = 0
+    labs_by_short_id: dict[str, ItemRecord] = {}
+
+    for lab in [item for item in items if item.get("type") == "lab"]:
+        title = lab["title"]
+        statement = select(ItemRecord).where(
+            ItemRecord.type == "lab",
+            ItemRecord.title == title,
         )
-        if not learner:
+        existing = (await session.exec(statement)).first()
+        if existing is None:
+            existing = ItemRecord(type="lab", title=title)
+            session.add(existing)
+            await session.flush()
+            created += 1
+
+        labs_by_short_id[lab["lab"]] = existing
+
+    for task in [item for item in items if item.get("type") == "task"]:
+        parent_lab = labs_by_short_id.get(task["lab"])
+        if parent_lab is None:
+            continue
+
+        title = task["title"]
+        statement = select(ItemRecord).where(
+            ItemRecord.type == "task",
+            ItemRecord.title == title,
+            ItemRecord.parent_id == parent_lab.id,
+        )
+        existing = (await session.exec(statement)).first()
+        if existing is None:
+            existing = ItemRecord(type="task", title=title, parent_id=parent_lab.id)
+            session.add(existing)
+            await session.flush()
+            created += 1
+
+    await session.commit()
+    return created
+
+
+async def load_logs(
+    logs: list[dict], items_catalog: list[dict], session: AsyncSession
+) -> int:
+    """Load interaction logs into the database.
+
+    Args:
+        logs: Raw log dicts from the API (each has lab, task, student_id, etc.)
+        items_catalog: Raw item dicts from fetch_items() — needed to map
+            short IDs (e.g. "lab-01", "setup") to item titles stored in the DB.
+        session: Database session.
+    """
+    from app.models.interaction import InteractionLog
+    from app.models.item import ItemRecord
+    from app.models.learner import Learner
+
+    created = 0
+    item_title_by_short_ids: dict[tuple[str | None, str | None], str] = {}
+
+    for item in items_catalog:
+        if item.get("type") == "lab":
+            item_title_by_short_ids[(item.get("lab"), None)] = item["title"]
+        elif item.get("type") == "task":
+            item_title_by_short_ids[(item.get("lab"), item.get("task"))] = item["title"]
+
+    for log in logs:
+        learner_statement = select(Learner).where(
+            Learner.external_id == str(log["student_id"])
+        )
+        learner = (await session.exec(learner_statement)).first()
+        if learner is None:
             learner = Learner(
-                external_id=log["student_id"],
-                group=log["group"],
+                external_id=str(log["student_id"]),
+                student_group=log.get("group", ""),
             )
             session.add(learner)
             await session.flush()
 
-        # 2. InteractionLog (idempotent по external_id)
-        submitted_at = datetime.fromisoformat(
-            log["submitted_at"].replace("Z", "+00:00")
-        )
+        title = item_title_by_short_ids.get((log.get("lab"), log.get("task")))
+        if title is None and log.get("task") is None:
+            title = item_title_by_short_ids.get((log.get("lab"), None))
+        if title is None:
+            continue
 
-        stmt = pg_insert(InteractionLog).values(
-            learner_id=learner.id,
-            # item_id можно оставить None или найти, но по требованиям лабы достаточно external_id
-            external_id=str(log["id"]),
-            score=float(log["score"]),
-            checks_passed=log["passed"],
-            checks_failed=log["failed"],
-            checks_total=log["total"],
-            checks=log.get("checks", []),
-            submitted_at=submitted_at,
+        item_statement = select(ItemRecord).where(ItemRecord.title == title)
+        item = (await session.exec(item_statement)).first()
+        if item is None:
+            continue
+
+        interaction_statement = select(InteractionLog).where(
+            InteractionLog.external_id == int(log["id"])
         )
-        stmt = stmt.on_conflict_do_nothing(index_elements=["external_id"])
-        await session.execute(stmt)
+        existing_interaction = (await session.exec(interaction_statement)).first()
+        if existing_interaction is not None:
+            continue
+
+        created_at = datetime.fromisoformat(log["submitted_at"].replace("Z", "+00:00"))
+        interaction = InteractionLog(
+            external_id=int(log["id"]),
+            learner_id=learner.id,
+            item_id=item.id,
+            kind="attempt",
+            score=log.get("score"),
+            checks_passed=log.get("passed"),
+            checks_total=log.get("total"),
+            created_at=created_at,
+        )
+        session.add(interaction)
+        created += 1
 
     await session.commit()
+    return created
 
 
-# ===================================================================
-# 5. sync() — главная функция пайплайна
-# ===================================================================
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
+
+
 async def sync(session: AsyncSession) -> dict:
-    """Полный цикл ETL: items → logs + статистика."""
-    # 1. Items
-    items_raw = await fetch_items()
-    await load_items(session, items_raw)
+    """Run the full ETL pipeline."""
+    from app.models.interaction import InteractionLog
 
-    # 2. Последняя дата в БД
-    max_ts = await session.scalar(select(func.max(InteractionLog.submitted_at)))
+    items_catalog = await fetch_items()
+    await load_items(items_catalog, session)
 
-    # 3. Logs (инкрементально)
-    logs_raw = await fetch_logs(since=max_ts)
+    latest_statement = select(func.max(InteractionLog.created_at))
+    since = (await session.exec(latest_statement)).one()
 
-    # 4. Загружаем логи
-    await load_logs(session, logs_raw, items_raw)
+    logs = await fetch_logs(since=since)
+    new_records = await load_logs(logs, items_catalog, session)
 
-    # 5. Статистика
-    new_records = len(logs_raw)
-    total_records = await session.scalar(select(func.count(InteractionLog.id)))
+    total_statement = select(func.count()).select_from(InteractionLog)
+    total_records = int((await session.exec(total_statement)).one())
 
-    return {
-        "new_records": new_records,
-        "total_records": total_records or 0,
-    }
+    return {"new_records": new_records, "total_records": total_records}

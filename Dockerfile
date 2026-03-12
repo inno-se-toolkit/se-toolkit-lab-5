@@ -11,7 +11,7 @@
 # A less portable solution: download image through a cache proxy provided by the University.
 # This solution is necessary to avoid "Too many requests" errors.
 # This solution won't work outside the University network.
-FROM harbor.pg.innopolis.university/docker-hub-cache/astral/uv:python3.14-bookworm-slim AS builder
+FROM astral/uv:python3.14-bookworm-slim AS builder
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
 # Omit development dependencies
