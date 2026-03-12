@@ -10,218 +10,204 @@ Both require HTTP Basic Auth (email + password from settings).
 from datetime import datetime
 
 import httpx
-from sqlmodel import func, select
+from sqlalchemy import func
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.interaction import InteractionLog
-from app.models.item import ItemRecord
-from app.models.learner import Learner
 from app.settings import settings
 
 
+# ---------------------------------------------------------------------------
+# Extract — fetch data from the autochecker API
+# ---------------------------------------------------------------------------
+
+
 async def fetch_items() -> list[dict]:
+    """Fetch the lab/task catalog from the autochecker API."""
     url = f"{settings.autochecker_api_url}/api/items"
 
-    async with httpx.AsyncClient(
-        auth=(settings.autochecker_email, settings.autochecker_password),
-        timeout=30.0,
-    ) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        data = response.json()
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            url,
+            auth=(settings.autochecker_email, settings.autochecker_password),
+        )
 
-    if not isinstance(data, list):
-        raise ValueError("Unexpected /api/items response format")
-
-    return data
+    response.raise_for_status()
+    return response.json()
 
 
 async def fetch_logs(since: datetime | None = None) -> list[dict]:
+    """Fetch check results from the autochecker API."""
     url = f"{settings.autochecker_api_url}/api/logs"
     all_logs: list[dict] = []
-    current_since = since
+    cursor = since
 
-    async with httpx.AsyncClient(
-        auth=(settings.autochecker_email, settings.autochecker_password),
-        timeout=60.0,
-    ) as client:
+    async with httpx.AsyncClient() as client:
         while True:
             params: dict[str, str | int] = {"limit": 500}
-            if current_since is not None:
-                params["since"] = _to_api_datetime(current_since)
+            if cursor is not None:
+                params["since"] = cursor.isoformat()
 
-            response = await client.get(url, params=params)
+            response = await client.get(
+                url,
+                params=params,
+                auth=(settings.autochecker_email, settings.autochecker_password),
+            )
             response.raise_for_status()
+
             payload = response.json()
-
-            if not isinstance(payload, dict):
-                raise ValueError("Unexpected /api/logs response format")
-
             batch = payload.get("logs", [])
-            has_more = payload.get("has_more", False)
-
-            if not isinstance(batch, list):
-                raise ValueError("Invalid logs payload")
-
             all_logs.extend(batch)
 
-            if not has_more or not batch:
+            if not payload.get("has_more") or not batch:
                 break
 
-            current_since = _parse_api_datetime(batch[-1]["submitted_at"])
+            cursor = datetime.fromisoformat(batch[-1]["submitted_at"].replace("Z", "+00:00"))
 
     return all_logs
 
 
+# ---------------------------------------------------------------------------
+# Load — insert fetched data into the local database
+# ---------------------------------------------------------------------------
+
+
 async def load_items(items: list[dict], session: AsyncSession) -> int:
-    created_count = 0
-    lab_map: dict[str, ItemRecord] = {}
+    """Load items (labs and tasks) into the database."""
+    from app.models.item import ItemRecord
 
-    labs = [item for item in items if item.get("type") == "lab"]
-    tasks = [item for item in items if item.get("type") == "task"]
+    created = 0
+    labs_by_short_id: dict[str, ItemRecord] = {}
 
-    for lab in labs:
-        lab_short_id = lab["lab"]
-        lab_title = lab["title"]
-
-        existing_lab = (
-            await session.exec(
-                select(ItemRecord).where(
-                    ItemRecord.type == "lab",
-                    ItemRecord.title == lab_title,
-                )
-            )
-        ).first()
-
-        if existing_lab is None:
-            existing_lab = ItemRecord(
-                type="lab",
-                title=lab_title,
-            )
-            session.add(existing_lab)
+    for lab in [item for item in items if item.get("type") == "lab"]:
+        title = lab["title"]
+        statement = select(ItemRecord).where(
+            ItemRecord.type == "lab",
+            ItemRecord.title == title,
+        )
+        existing = (await session.exec(statement)).first()
+        if existing is None:
+            existing = ItemRecord(type="lab", title=title)
+            session.add(existing)
             await session.flush()
-            created_count += 1
+            created += 1
 
-        lab_map[lab_short_id] = existing_lab
+        labs_by_short_id[lab["lab"]] = existing
 
-    for task in tasks:
-        task_title = task["title"]
-        parent_lab = lab_map.get(task["lab"])
-
+    for task in [item for item in items if item.get("type") == "task"]:
+        parent_lab = labs_by_short_id.get(task["lab"])
         if parent_lab is None:
             continue
 
-        existing_task = (
-            await session.exec(
-                select(ItemRecord).where(
-                    ItemRecord.type == "task",
-                    ItemRecord.title == task_title,
-                    ItemRecord.parent_id == parent_lab.id,
-                )
-            )
-        ).first()
-
-        if existing_task is None:
-            existing_task = ItemRecord(
-                type="task",
-                title=task_title,
-                parent_id=parent_lab.id,
-            )
-            session.add(existing_task)
+        title = task["title"]
+        statement = select(ItemRecord).where(
+            ItemRecord.type == "task",
+            ItemRecord.title == title,
+            ItemRecord.parent_id == parent_lab.id,
+        )
+        existing = (await session.exec(statement)).first()
+        if existing is None:
+            existing = ItemRecord(type="task", title=title, parent_id=parent_lab.id)
+            session.add(existing)
             await session.flush()
-            created_count += 1
+            created += 1
 
     await session.commit()
-    return created_count
+    return created
 
 
 async def load_logs(
     logs: list[dict], items_catalog: list[dict], session: AsyncSession
 ) -> int:
-    created_count = 0
+    """Load interaction logs into the database.
 
-    title_lookup: dict[tuple[str, str | None], str] = {}
+    Args:
+        logs: Raw log dicts from the API (each has lab, task, student_id, etc.)
+        items_catalog: Raw item dicts from fetch_items() — needed to map
+            short IDs (e.g. "lab-01", "setup") to item titles stored in the DB.
+        session: Database session.
+    """
+    from app.models.interaction import InteractionLog
+    from app.models.item import ItemRecord
+    from app.models.learner import Learner
+
+    created = 0
+    item_title_by_short_ids: dict[tuple[str | None, str | None], str] = {}
+
     for item in items_catalog:
-        title_lookup[(item["lab"], item.get("task"))] = item["title"]
+        if item.get("type") == "lab":
+            item_title_by_short_ids[(item.get("lab"), None)] = item["title"]
+        elif item.get("type") == "task":
+            item_title_by_short_ids[(item.get("lab"), item.get("task"))] = item["title"]
 
     for log in logs:
-        learner = (
-            await session.exec(
-                select(Learner).where(Learner.external_id == log["student_id"])
-            )
-        ).first()
-
+        learner_statement = select(Learner).where(
+            Learner.external_id == str(log["student_id"])
+        )
+        learner = (await session.exec(learner_statement)).first()
         if learner is None:
             learner = Learner(
-                external_id=log["student_id"],
+                external_id=str(log["student_id"]),
                 student_group=log.get("group", ""),
             )
             session.add(learner)
             await session.flush()
 
-        item_title = title_lookup.get((log["lab"], log.get("task")))
-        if item_title is None:
+        title = item_title_by_short_ids.get((log.get("lab"), log.get("task")))
+        if title is None and log.get("task") is None:
+            title = item_title_by_short_ids.get((log.get("lab"), None))
+        if title is None:
             continue
 
-        item = (
-            await session.exec(
-                select(ItemRecord).where(ItemRecord.title == item_title)
-            )
-        ).first()
-
+        item_statement = select(ItemRecord).where(ItemRecord.title == title)
+        item = (await session.exec(item_statement)).first()
         if item is None:
             continue
 
-        existing_log = (
-            await session.exec(
-                select(InteractionLog).where(InteractionLog.external_id == log["id"])
-            )
-        ).first()
-
-        if existing_log is not None:
+        interaction_statement = select(InteractionLog).where(
+            InteractionLog.external_id == int(log["id"])
+        )
+        existing_interaction = (await session.exec(interaction_statement)).first()
+        if existing_interaction is not None:
             continue
 
+        created_at = datetime.fromisoformat(log["submitted_at"].replace("Z", "+00:00"))
         interaction = InteractionLog(
-            external_id=log["id"],
+            external_id=int(log["id"]),
             learner_id=learner.id,
             item_id=item.id,
             kind="attempt",
             score=log.get("score"),
             checks_passed=log.get("passed"),
             checks_total=log.get("total"),
-            created_at=_parse_api_datetime(log["submitted_at"]),
+            created_at=created_at,
         )
         session.add(interaction)
-        created_count += 1
+        created += 1
 
     await session.commit()
-    return created_count
+    return created
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
 
 
 async def sync(session: AsyncSession) -> dict:
-    items = await fetch_items()
-    await load_items(items, session)
+    """Run the full ETL pipeline."""
+    from app.models.interaction import InteractionLog
 
-    last_synced_at = (
-        await session.exec(select(func.max(InteractionLog.created_at)))
-    ).one()
+    items_catalog = await fetch_items()
+    await load_items(items_catalog, session)
 
-    logs = await fetch_logs(last_synced_at)
-    new_records = await load_logs(logs, items, session)
+    latest_statement = select(func.max(InteractionLog.created_at))
+    since = (await session.exec(latest_statement)).one()
 
-    total_records = (
-        await session.exec(select(func.count()).select_from(InteractionLog))
-    ).one()
+    logs = await fetch_logs(since=since)
+    new_records = await load_logs(logs, items_catalog, session)
 
-    return {
-        "new_records": int(new_records),
-        "total_records": int(total_records),
-    }
+    total_statement = select(func.count()).select_from(InteractionLog)
+    total_records = int((await session.exec(total_statement)).one())
 
-
-def _parse_api_datetime(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
-
-
-def _to_api_datetime(value: datetime) -> str:
-    return value.isoformat() + "Z"
+    return {"new_records": new_records, "total_records": total_records}
